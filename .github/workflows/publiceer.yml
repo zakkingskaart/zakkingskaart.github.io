@@ -46,6 +46,8 @@ jobs:
       - name: Kaart maken
         env:
           ZK_FEEDBACK_URL: ${{ secrets.ZK_FEEDBACK_URL }}
+          ZK_SITE_URL: ${{ vars.ZK_SITE_URL }}                       # leeg = https://zakkingskaart.github.io/
+          ZK_GOOGLE_VERIFICATIE: ${{ vars.ZK_GOOGLE_VERIFICATIE }}   # code uit Google Search Console
           VERNIEUW: ${{ inputs.vernieuw }}
           FORCEER: ${{ inputs.forceer }}
         run: |
