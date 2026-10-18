@@ -119,6 +119,26 @@ De workflow `.github/workflows/publiceer.yml` draait elke maandagochtend, bij ee
 
 Eenmalig instellen: **Settings → Pages → Source: GitHub Actions**. Voor feedback zet je onder **Settings → Secrets and variables → Actions** het secret `ZK_FEEDBACK_URL` (zie hieronder). Mislukt een run, dan stuurt GitHub een e-mail naar het adres van het account. De vorige versie van de site blijft dan gewoon online.
 
+## Vindbaar in Google
+
+De site heeft een paginatitel, een beschrijving, een `robots.txt` en een `sitemap.xml`. Om Google de site te laten kennen en zoekstatistieken te zien:
+1. Ga (ingelogd met het Google-account van de kaart) naar Google Search Console en kies **Property toevoegen → URL-voorvoegsel**: `https://zakkingskaart.github.io/`.
+2. Kies als verificatiemethode **HTML-tag** en kopieer alleen de code tussen `content="` en `"`.
+3. Zet die code in GitHub onder **Settings → Secrets and variables → Actions → tabblad Variables** als variabele `ZK_GOOGLE_VERIFICATIE`, en start de workflow handmatig.
+4. Klik in Search Console op **Verifiëren** en dien onder **Sitemaps** `sitemap.xml` in.
+
+## Eigen domein (optioneel)
+
+1. Verifieer eerst het domein bij GitHub: **profiel-Settings → Pages → Add a domain** (een TXT-record). Dat voorkomt dat iemand anders het domein aan een eigen GitHub-site kan koppelen.
+2. Zet bij je domeinregistrar deze DNS-regels:
+   - `A` voor het domein zelf: `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`
+   - `AAAA`: `2606:50c0:8000::153`, `2606:50c0:8001::153`, `2606:50c0:8002::153`, `2606:50c0:8003::153`
+   - `CNAME` voor `www`: `zakkingskaart.github.io`
+3. Vul in de repo bij **Settings → Pages → Custom domain** het domein in. Zet **Enforce HTTPS** aan zodra dat kan.
+4. Zet de variabele `ZK_SITE_URL` op het nieuwe adres (bijvoorbeeld `https://zakkingskaart.nl/`) en start de workflow. Het oude github.io-adres stuurt dan vanzelf door.
+
+Stop je later met het domein, haal het dan **eerst** weg bij Custom domain en laat het daarna pas verlopen.
+
 ## Feedback aanzetten (optioneel)
 
 De kaart heeft een knop **"★ Feedback"**. Bezoekers geven daarmee 1 tot 5 sterren, met eventueel een korte toelichting (maximaal 280 tekens). Er wordt geen naam of e-mailadres gevraagd.

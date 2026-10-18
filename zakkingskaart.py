@@ -514,6 +514,8 @@ def vendor_leaflet(site_dir, cache_dir):
     dst = os.path.join(site_dir, "leaflet")
     os.makedirs(os.path.join(dst, "images"), exist_ok=True)
     for rel, data in files.items():
+        if rel == "LICENSE":
+            rel = "LICENSE.txt"  # met extensie, zodat browsers het als tekst tonen
         with open(os.path.join(dst, rel), "wb") as fh:
             fh.write(data)
 
@@ -776,7 +778,34 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y):
     write_text(os.path.join(out_dir, "data.json"), data)
 
     boot = SITE_BOOT.replace("__DATAURL__", "data.json?v=" + short_hash(data))
+
+    # zoekmachines: canonical adres, Open Graph, robots.txt en sitemap.xml
+    site_url = args.site_url.strip()
+    if not site_url.endswith("/"):
+        site_url += "/"
+    esc = lambda s: (s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;"))
+    descr = ("Onafhankelijke kaart van gevelzakking in Amsterdam, op basis van de openbare meetbouten van de "
+             "gemeente. Zoek je straat of adres en zie hoe snel gevels de laatste jaren zakken.")
+    head = [
+        f'<link rel="canonical" href="{esc(site_url)}">',
+        '<meta property="og:type" content="website">',
+        '<meta property="og:locale" content="nl_NL">',
+        '<meta property="og:title" content="Zakkingskaart Amsterdam">',
+        f'<meta property="og:description" content="{esc(descr)}">',
+        f'<meta property="og:url" content="{esc(site_url)}">',
+    ]
+    gv = re.sub(r"[^A-Za-z0-9_\-]", "", args.google_verificatie.strip())
+    if gv:
+        head.append(f'<meta name="google-site-verification" content="{gv}">')
+    write_text(os.path.join(out_dir, "robots.txt"), f"User-agent: *\nAllow: /\nSitemap: {site_url}sitemap.xml\n")
+    write_text(os.path.join(out_dir, "sitemap.xml"),
+               '<?xml version="1.0" encoding="UTF-8"?>\n'
+               '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+               f'  <url><loc>{esc(site_url)}</loc><lastmod>{meta["generated"]}</lastmod>'
+               '<changefreq>weekly</changefreq></url>\n</urlset>\n')
+
     page = (HTML_TEMPLATE
+            .replace("__HEAD_EXTRA__", "\n".join(head))
             .replace("__LEAFLET_CSS__", "leaflet/leaflet.css?v=" + LEAFLET_VERSION)
             .replace("__LEAFLET_JS__", "leaflet/leaflet.js?v=" + LEAFLET_VERSION)
             .replace("__BOOT__", boot))
@@ -815,6 +844,12 @@ def main():
                          "zoveel dagen oud is; vangt correcties op (standaard 90)")
     ap.add_argument("--forceer", action="store_true",
                     help="--site: ook publiceren als er veel minder meetbouten of metingen zijn dan de vorige keer")
+    ap.add_argument("--site-url", default=os.environ.get("ZK_SITE_URL") or "https://zakkingskaart.github.io/",
+                    help="--site: het publieke adres van de site, voor zoekmachines (canonical, sitemap). "
+                         "Standaard https://zakkingskaart.github.io/ (ook via ZK_SITE_URL)")
+    ap.add_argument("--google-verificatie", default=os.environ.get("ZK_GOOGLE_VERIFICATIE", ""),
+                    help="--site: code van Google Search Console (meta-tag google-site-verification), "
+                         "ook via ZK_GOOGLE_VERIFICATIE")
     ap.add_argument("--api", default=API, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--vernieuw", action="store_true", help="data opnieuw ophalen en de cache negeren")
     ap.add_argument("--proef", action="store_true", help="snelle proefrun: alleen de eerste paar pagina's ophalen")
@@ -991,6 +1026,7 @@ def main():
         payload = payload.replace("</", "<\\/")
         html_path = os.path.join(out_dir, "zakkingskaart.html")
         page = (HTML_TEMPLATE
+                .replace("__HEAD_EXTRA__", "")
                 .replace("__LEAFLET_CSS__", "https://unpkg.com/leaflet@%s/dist/leaflet.css" % LEAFLET_VERSION)
                 .replace("__LEAFLET_JS__", "https://unpkg.com/leaflet@%s/dist/leaflet.js" % LEAFLET_VERSION)
                 .replace("__BOOT__", "zkStart(__DATA__);")
@@ -1044,7 +1080,9 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zakkingskaart Amsterdam</title>
+<title>Zakkingskaart Amsterdam: hoe snel zakken de gevels in jouw straat?</title>
+<meta name="description" content="Onafhankelijke kaart van gevelzakking in Amsterdam, op basis van de openbare meetbouten van de gemeente. Zoek je straat of adres en zie hoe snel gevels de laatste jaren zakken.">
+__HEAD_EXTRA__
 <link rel="stylesheet" href="__LEAFLET_CSS__">
 <style>
 :root{--ink:#1c1c1a;--muted:#6b6a64;--panel:rgba(255,255,255,.96);--line:#e3e1d9;
@@ -1105,8 +1143,15 @@ a.raw{display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)}
   #legend.collapsed .body{display:none}
 }
 #legend.collapsed .body{display:none}
-#modal,#fbModal{position:fixed;inset:0;z-index:4000;background:rgba(20,20,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
-#modal[hidden],#fbModal[hidden]{display:none}
+#modal,#fbModal,#aboutModal{position:fixed;inset:0;z-index:4000;background:rgba(20,20,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+#modal[hidden],#fbModal[hidden],#aboutModal[hidden]{display:none}
+#legend .indep{margin:4px 0 0;font-size:12px;color:var(--muted)}
+#legend .indep a,#aboutModal a{color:var(--accent)}
+#aboutModal .mbox{max-width:640px}
+#aBody{overflow:auto;padding:4px 18px 18px;font-size:13.5px;line-height:1.55}
+#aBody h3{font-size:14px;margin:16px 0 4px}
+#aBody p{margin:0 0 8px}
+#aClose{border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;line-height:1;cursor:pointer;flex:none}
 #fbBtn{border:1px solid var(--line);background:#fff;border-radius:6px;height:26px;padding:0 9px;cursor:pointer;font:inherit;font-weight:600;color:var(--accent);white-space:nowrap}
 #fbBtn:focus-visible,#fbModal button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 #legend .head .btns{display:flex;gap:6px;align-items:center}
@@ -1167,12 +1212,28 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     </form>
   </div></div>
 </div>
+<div id="aboutModal" hidden role="dialog" aria-modal="true" aria-labelledby="aTitle">
+  <div class="mbox"><div class="mhead"><div><h2 id="aTitle">Over deze kaart</h2></div><button id="aClose" type="button" aria-label="Sluiten">&times;</button></div>
+  <div id="aBody">
+    <h3>Onafhankelijk initiatief</h3>
+    <p>Zakkingskaart is een onafhankelijk, niet-commercieel initiatief. Het is geen website van de gemeente Amsterdam en wordt niet door de gemeente gemaakt, gecontroleerd of goedgekeurd.</p>
+    <h3>Wat de kaart laat zien</h3>
+    <p>De kaart gebruikt de openbare meetboutgegevens van de gemeente Amsterdam en wordt wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;, vaak na funderingsherstel) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
+    <h3>Disclaimer</h3>
+    <p>De kleuren zijn een berekende indicatie op basis van metingen aan gevels. Ze zijn geen oordeel over de fundering, de staat of de waarde van een pand, en kunnen onvolledig of verouderd zijn. Aan deze kaart kunnen geen rechten worden ontleend. Neem je een beslissing over een pand, laat dan een funderingsonderzoek doen door een deskundige en raadpleeg de officiële gegevens van de gemeente.</p>
+    <h3>Privacy</h3>
+    <p>Deze site gebruikt geen cookies en geen tracking. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
+    <h3>Bronnen</h3>
+    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
+  </div></div>
+</div>
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <div class="mbox"><div class="mhead"><div><h2 id="mTitle"></h2><div class="sub" id="mSub"></div></div><button id="mClose" type="button" aria-label="Sluiten">&times;</button></div>
   <div id="mBody"></div></div>
 </div>
 <aside id="legend" class="panel">
   <div class="head"><h1>Zakkingskaart Amsterdam</h1><div class="btns"><button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="In- of uitklappen">–</button></div></div>
+  <p class="indep">Onafhankelijk initiatief, los van de gemeente Amsterdam · <a href="#over" id="aboutLink">Over &amp; disclaimer</a></p>
   <div class="body">
     <div class="rows" id="rows"></div>
     <p class="note" id="viewnote">Aantallen: meetbouten in beeld.</p>
@@ -1199,6 +1260,15 @@ window.__showErr=function(t){var d=document.getElementById("err");if(!d){d=docum
 d.style.cssText="position:absolute;left:12px;right:12px;bottom:40px;z-index:3000;background:#fde8e6;color:#7a1c12;border:1px solid #e9a79f;border-radius:8px;padding:10px 12px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;max-height:40%;overflow:auto";
 document.body.appendChild(d);d.textContent="Er ging iets mis bij het tekenen van de meetbouten. Stuur deze melding door:\n\n";}d.textContent+=t+"\n";};
 window.addEventListener("error",function(e){window.__showErr((e.message||"fout")+" (regel "+e.lineno+":"+e.colno+")");});
+// "Over & disclaimer": werkt los van de kaart, ook als de data niet laadt. Deelbaar als #over.
+(function(){var m=document.getElementById("aboutModal"),prev=null;
+function open(e){if(e)e.preventDefault();prev=document.activeElement;m.hidden=false;document.getElementById("aClose").focus();}
+function close(){m.hidden=true;if(location.hash==="#over"&&history.replaceState)history.replaceState(null,"",location.pathname+location.search);if(prev&&prev.focus)prev.focus();}
+document.getElementById("aboutLink").addEventListener("click",open);
+document.getElementById("aClose").addEventListener("click",close);
+m.addEventListener("click",function(e){if(e.target===m)close();});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!m.hidden)close();});
+if(location.hash==="#over")open();})();
 </script>
 <script>
 function zkStart(D){
