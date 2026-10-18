@@ -865,6 +865,8 @@ def main():
                     help="alleen dit gebied op de kaart: zuid,west,noord,oost in graden, bv. 52.33,4.85,52.38,4.96")
     ap.add_argument("--zonder-grafieken", action="store_true", help="geen meetreeksen in de kaart (kleiner bestand)")
     ap.add_argument("--niet-openen", action="store_true", help="kaart niet automatisch in de browser openen")
+    ap.add_argument("--zonder-teller", action="store_true",
+                    help="--site: geen anonieme bezoekersteller (standaard telt de site anoniem via de feedback-ontvanger)")
     ap.add_argument("--feedback-url", default=os.environ.get("ZK_FEEDBACK_URL", ""),
                     help="webadres van de feedback-ontvanger (Google Apps Script, eindigt op /exec; zie "
                          "feedback/Code.gs). Zonder adres geen feedbackknop. Ook via omgevingsvariabele ZK_FEEDBACK_URL")
@@ -1001,6 +1003,8 @@ def main():
         "proef": bool(args.proef),
         "minSpan": args.min_periode,
         "feedbackUrl": args.feedback_url.strip(),
+        # anonieme teller: zelfde Apps Script; alleen in website-modus
+        "statsUrl": "" if (args.zonder_teller or not args.site) else args.feedback_url.strip(),
     }
     if args.site:
         # Veiligheidscheck: niet publiceren als de gemeente (tijdelijk) veel minder levert.
@@ -1222,7 +1226,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <h3>Disclaimer</h3>
     <p>De kleuren zijn een berekende indicatie op basis van metingen aan gevels. Ze zijn geen oordeel over de fundering, de staat of de waarde van een pand, en kunnen onvolledig of verouderd zijn. Aan deze kaart kunnen geen rechten worden ontleend. Neem je een beslissing over een pand, laat dan een funderingsonderzoek doen door een deskundige en raadpleeg de officiële gegevens van de gemeente.</p>
     <h3>Privacy</h3>
-    <p>Deze site gebruikt geen cookies en geen tracking. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
+    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
     <h3>Bronnen</h3>
     <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
   </div></div>
@@ -1277,6 +1281,34 @@ try{
 if(typeof L==="undefined"){document.body.insertAdjacentHTML("beforeend",'<p style="position:absolute;top:80px;left:20px;z-index:2000;background:#fff;padding:12px;border-radius:8px">De kaartbibliotheek kon niet worden geladen. Controleer je internetverbinding en open het bestand opnieuw.</p>');return;}
 const B=D.b,G=D.g,M=D.meta;
 let serState="ok",curPop=null;   // meetreeksen: "ok" | "laden" | "fout"
+
+// ---------- anonieme teller ----------
+// Meldt alleen: kaart geopend, mobiel/desktop, herkomst, en hoe vaak er is gezocht en geklikt.
+// Geen cookies, geen opslag in de browser, geen kenmerken per bezoeker.
+const TEL=(function(){
+  const url=(M.statsUrl||"").trim(),geen={tel(){}};
+  if(!/^https:\/\//i.test(url))return geen;
+  if(/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname)||location.protocol==="file:")return geen;
+  if(navigator.webdriver||/bot|crawl|spider|slurp|preview|lighthouse/i.test(navigator.userAgent||""))return geen;
+  const ev={zoek:0,punt:0,meet:0};
+  function send(o){try{const body=JSON.stringify(Object.assign({soort:"stat"},o));
+    if(navigator.sendBeacon&&navigator.sendBeacon(url,new Blob([body],{type:"text/plain;charset=utf-8"})))return;
+    fetch(url,{method:"POST",mode:"no-cors",keepalive:true,headers:{"Content-Type":"text/plain;charset=utf-8"},body:body}).catch(()=>{});}catch(e){}}
+  let bron="direct";
+  try{const r=document.referrer?new URL(document.referrer).hostname.replace(/^www\./,"").toLowerCase():"";
+    const eigen=location.hostname.replace(/^www\./,"").toLowerCase();
+    if(!r)bron="direct";
+    else if(r===eigen||r==="zakkingskaart.github.io"||r==="zakkingskaart.nl")bron="intern";
+    else if(/(^|\.)google\./.test(r))bron="google";
+    else if(/(^|\.)(bing|duckduckgo|ecosia|yahoo|startpage|qwant|search\.brave)\./.test(r))bron="zoekmachine";
+    else if(/(^|\.)(facebook|instagram|twitter|x|t|linkedin|reddit|whatsapp|threads|bsky|mastodon|tiktok)\.(com|co|app|net|social|nl)$/.test(r)||/^(lm|l|m)\.facebook\.com$/.test(r))bron="social";
+    else bron="site:"+r;}catch(e){}
+  send({bezoek:1,apparaat:matchMedia("(max-width:640px)").matches?"mobiel":"desktop",bron:bron});
+  function flush(){if(ev.zoek||ev.punt||ev.meet){send({zoek:ev.zoek,punt:ev.punt,meet:ev.meet});ev.zoek=ev.punt=ev.meet=0;}}
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flush();});
+  window.addEventListener("pagehide",flush);
+  return {tel(k){if(k in ev)ev[k]++;}};
+})();
 const I={id:0,lat:1,lon:2,addr:3,street:4,blk:5,status:6,n:7,first:8,last:9,lastY:10,recent:11,rfrom:12,early:13,efrom:14,total:15,cum:16,ser:17};
 const KL=["rood","geel","groen","stab","oud"];
 const COL={rood:"#d7301f",geel:"#e6a700",groen:"#1a9850",stab:"#1a9850",oud:"#9a9a9a"};
@@ -1459,6 +1491,7 @@ function chart(b,c){
 }
 function pill(c){const[l]=label(c);return '<div class="pill"><i style="background:'+COL[c]+(c==="stab"?";box-shadow:0 0 0 2px "+RING:"")+'"></i>'+l+'</div>';}
 function openBout(i){
+  if(!curPop||curPop.i!==i)TEL.tel("punt");
   const b=B[i],c=C[i];
   const y=v=>v==null?"":Math.floor(v);
   const age=b[I.lastY]!=null?Math.max(0,Math.round(M.nowYear-b[I.lastY])):null;
@@ -1516,6 +1549,7 @@ function rawSection(url,data,err){
   return '<h3>Ruwe gegevens van de gemeente</h3><p class="mnote" style="margin:0 0 6px">Precies zoals de gemeente ze levert (API, JSON). '+link+'</p><pre class="rawjson" id="rawjson"></pre>';
 }
 function openMeas(i){
+  TEL.tel("meet");
   const b=B[i];lastFocus=document.activeElement;
   mTitle.textContent=b[I.addr]||"Meetbout "+b[I.id];
   mSub.textContent="Meetbout "+b[I.id]+(b[I.blk]?" · blok "+b[I.blk]:"")+(b[I.status]?" · "+b[I.status]:"");
@@ -1563,6 +1597,7 @@ function say(t){msg.textContent=t;msg.hidden=false;clearTimeout(say._t);say._t=s
 document.getElementById("search").addEventListener("submit",e=>{
   e.preventDefault();
   const q=document.getElementById("q").value.trim();if(!q)return;
+  TEL.tel("zoek");
   if(/^\d{5,}$/.test(q)){const i=B.findIndex(b=>String(b[I.id])===q);if(i>=0){map.setView([B[i][I.lat],B[i][I.lon]],18);setTimeout(()=>openBout(i),300);return;}}
   const base=q.toLowerCase().replace(/\s+\d.*$/,"").trim();
   let key=byStreet.has(base)?base:(streetKeys.find(k=>k.startsWith(base))||streetKeys.find(k=>k.includes(base)));
