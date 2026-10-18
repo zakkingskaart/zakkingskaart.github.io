@@ -1,0 +1,177 @@
+# Zakkingskaart Amsterdam: zo draai je het script
+
+Het script `zakkingskaart.py` haalt alle meetbouten en metingen op bij de gemeente Amsterdam. Het berekent per meetbout hoe snel de gevel zakt en maakt daar een kaart van die je in je browser opent. Je hebt alleen Python 3.8 of nieuwer nodig, geen extra pakketten.
+
+## 1. Eenmalig: Python controleren
+
+**Mac**
+1. Open **Terminal** (Cmd+spatie, typ "Terminal").
+2. Typ `python3 --version` en druk op Enter.
+   - Zie je `Python 3.8` of hoger? Dan ben je klaar.
+   - Vraagt de Mac om "ontwikkelaarstools" te installeren, klik dan op Installeer en probeer het daarna opnieuw.
+   - Werkt het niet? Installeer Python via https://www.python.org/downloads/. Ga daarna in Finder naar **Programma's > Python 3.x** en dubbelklik op **Install Certificates.command**.
+
+**Windows**
+1. Installeer Python via https://www.python.org/downloads/ en vink **"Add python.exe to PATH"** aan.
+2. Open **Opdrachtprompt** en typ `py --version`.
+
+## 2. Script klaarzetten
+
+Maak een map aan, bijvoorbeeld `Zakkingskaart` in je Documenten, en zet `zakkingskaart.py` erin.
+
+Ga in Terminal naar die map:
+
+```
+cd ~/Documents/Zakkingskaart
+```
+
+(Windows: `cd %USERPROFILE%\Documents\Zakkingskaart`)
+
+## 3. Eerst een proefrun (ongeveer 1 minuut)
+
+```
+python3 zakkingskaart.py --proef
+```
+
+(Windows: `py zakkingskaart.py --proef`)
+
+Dit haalt een klein deel van de data op en opent een kaart. De meeste punten zijn dan grijs, en dat is normaal. Het doel is alleen te controleren dat alles werkt.
+
+## 4. De volledige kaart
+
+```
+python3 zakkingskaart.py
+```
+
+- De eerste keer duurt het **ongeveer 10 tot 30 minuten**, omdat het om honderdduizenden metingen gaat. Je ziet de voortgang in het venster.
+- Wordt het onderbroken (laptop dicht, Ctrl+C, wifi weg)? Start hetzelfde commando opnieuw, dan gaat het verder waar het was.
+- Daarna opent de kaart vanzelf in je browser.
+
+De uitvoer staat in de map `zakkingskaart_uitvoer`:
+
+| Bestand | Wat |
+|---|---|
+| `zakkingskaart.html` | de kaart; dubbelklik om opnieuw te openen |
+| `meetbouten_analyse.csv` | alle cijfers per meetbout, opent in Excel |
+| `cache/` | de opgehaalde data, zodat een volgende run in seconden klaar is |
+
+Voor de achtergrondkaart heb je internet nodig.
+
+## 5. Handige varianten
+
+| Doel | Commando |
+|---|---|
+| Nieuwste metingen ophalen | `python3 zakkingskaart.py --vernieuw` |
+| Alleen Zuid en Oost tonen (sneller in de browser) | `python3 zakkingskaart.py --bbox 52.32,4.83,52.38,5.00` |
+| Kleiner bestand, zonder grafiekjes | `python3 zakkingskaart.py --zonder-grafieken` |
+| Website maken (zie hieronder) | `python3 zakkingskaart.py --site` |
+| Alle opties | `python3 zakkingskaart.py --help` |
+
+## Website maken (`--site`)
+
+```
+python3 zakkingskaart.py --site
+```
+
+Dit maakt in plaats van één groot bestand een kleine website in de map `site`:
+
+| Bestand | Wat |
+|---|---|
+| `index.html` | de kaart zelf, zonder data, laadt snel |
+| `data.json` | alle meetbouten met hun cijfers |
+| `reeksen.json` | de meetreeksen voor de grafiekjes; wordt pas geladen nadat de kaart er staat |
+| `leaflet/` | de kaartbibliotheek, zelf gehost, zodat bezoekers geen verzoeken naar een extern CDN doen |
+| `meetbouten_analyse.csv` | alle cijfers per meetbout, als download |
+| `.nojekyll` | zorgt dat GitHub Pages de bestanden ongewijzigd publiceert |
+
+De data blijft bewaard in de map `cache`, die bewust **buiten** `site` staat, zodat hij niet wordt gepubliceerd. Bij elke volgende run:
+- worden de meetbouten opnieuw opgehaald (klein, en status of adres kan wijzigen);
+- worden van de metingen **alleen de nieuwe** opgehaald: alles vanaf de laatst bekende datum min 2 jaar (`--terugkijk 730`), zodat ook laat ingevoerde metingen meekomen. Nieuwe en gewijzigde metingen worden samengevoegd met de cache;
+- worden alle metingen eens per 90 dagen toch volledig opnieuw opgehaald (`--volledig-na 90`). Zo komen ook correcties en verwijderingen in oudere metingen mee. `--vernieuw` doet dat meteen;
+- stopt het script **zonder iets te publiceren** als de gemeente veel minder levert dan de vorige keer (minder dan 90% van de meetbouten of 95% van de metingen). De bestaande site blijft dan staan. Klopt het toch, draai dan met `--forceer`.
+
+De eerste keer haalt het script ook Leaflet 1.9.4 op en controleert het die bestanden op de officiële hashes. Kloppen die niet, dan stopt het.
+
+**Lokaal bekijken:** dubbelklikken op `index.html` werkt niet, omdat de pagina `data.json` ophaalt. Start daarom een mini-webserver:
+
+```
+python3 -m http.server 8000 --directory site
+```
+
+en open http://localhost:8000 in je browser. Stoppen doe je met Ctrl+C.
+
+**In de repository** horen alleen het script en de documentatie. Zet deze regels in `.gitignore`:
+
+```
+cache/
+cache_proef/
+site/
+zakkingskaart_uitvoer/
+```
+
+## Automatisch publiceren via GitHub
+
+De workflow `.github/workflows/publiceer.yml` draait elke maandagochtend, bij een wijziging in het script, en handmatig via het tabblad **Actions** (knop **Run workflow**, met de opties "alles opnieuw ophalen" en "forceer"). Hij:
+1. haalt de cache op van de branch `data-cache`;
+2. draait `zakkingskaart.py --site`;
+3. bewaart de bijgewerkte cache weer op `data-cache` (één commit, steeds overschreven, door `github-actions[bot]`). Die wekelijkse push telt ook als activiteit, zodat GitHub het schema niet na 60 dagen stilzet;
+4. publiceert de map `site` op GitHub Pages.
+
+Eenmalig instellen: **Settings → Pages → Source: GitHub Actions**. Voor feedback zet je onder **Settings → Secrets and variables → Actions** het secret `ZK_FEEDBACK_URL` (zie hieronder). Mislukt een run, dan stuurt GitHub een e-mail naar het adres van het account. De vorige versie van de site blijft dan gewoon online.
+
+## Feedback aanzetten (optioneel)
+
+De kaart heeft een knop **"★ Feedback"**. Bezoekers geven daarmee 1 tot 5 sterren, met eventueel een korte toelichting (maximaal 280 tekens). Er wordt geen naam of e-mailadres gevraagd.
+
+De feedback komt binnen via een klein Google Apps Script (`feedback/Code.gs`) dat draait onder het Google-account van de kaart. Het script mailt elke beoordeling naar de mailbox van dat account. Het e-mailadres staat daardoor niet in de code en niet op de website; bezoekers zien het nergens. Er komt geen extra formulierdienst aan te pas. Meer dan 50 berichten per dag worden genegeerd, tegen spam.
+
+**Eenmalig instellen** (ingelogd met het Google-account van de kaart):
+1. Ga naar https://script.google.com en kies **Nieuw project**. Noem het bijvoorbeeld "Zakkingskaart feedback".
+2. Vervang de inhoud van `Code.gs` door die van `feedback/Code.gs` en klik op **Opslaan**.
+3. Kies **Implementeren → Nieuwe implementatie**. Klik op het tandwiel bij "Type selecteren" en kies **Web-app**. Vul in:
+   - **Uitvoeren als:** Ik
+   - **Wie heeft toegang:** Iedereen
+4. Klik op **Implementeren** en geef toestemming. Google waarschuwt dat de app "niet geverifieerd" is: kies **Geavanceerd → Ga naar Zakkingskaart feedback**. Dat is normaal voor een eigen script.
+5. Kopieer de **URL van de web-app** (eindigt op `/exec`). Open die in je browser; je hoort `{"ok":true,"bericht":"feedback-ontvanger actief"}` te zien.
+6. Zet die URL als secret `ZK_FEEDBACK_URL` in GitHub, of maak lokaal de kaart met:
+
+```
+python3 zakkingskaart.py --site --feedback-url https://script.google.com/macros/s/.../exec
+```
+
+Pas je het script later aan, kies dan **Implementeren → Implementaties beheren → bewerken (potlood) → Versie: Nieuwe versie**. Zo blijft de URL hetzelfde.
+
+De URL komt in de website te staan; dat kan niet anders. Hij bevat alleen een willekeurige code, geen e-mailadres. Iemand met de URL kan je hooguit berichten sturen, tot de daglimiet.
+
+## 6. De kaart gebruiken
+
+- **Zoeken:** typ een straat (`Rijnstraat`), een adres (`Rijnstraat 100`) of een meetbout-nummer.
+- **Lijnen** zijn straatdelen per bouwblok, gekleurd op de mediaan van de meetbouten daarin. **Punten** zijn de losse meetbouten.
+- **Klik op een lijn** voor een lijst van alle bouten in dat straatdeel. **Klik op een punt** voor de cijfers en een grafiek van de zakking.
+- **Kleuren** (standaard):
+  - rood: 2,0 mm/jaar of meer
+  - geel: 1,0 tot 2,0 mm/jaar
+  - groen: minder dan 1,0 mm/jaar
+  - groen met donkere rand of stippellijn: **gestabiliseerd**, eerst minstens 1,5 mm/jaar en nu minder dan 0,5 mm/jaar. Dat wijst vaak op funderingsherstel.
+  - grijs: geen recente data (laatste meting meer dan 10 jaar oud, bout vervallen, of meetreeks te kort)
+- Via **"Grenzen aanpassen"** verander je alle grenzen. Daar kun je ook oudere metingen alsnog laten kleuren.
+
+## 7. Hoe de snelheid berekend wordt
+
+**Recente snelheid** = het verschil tussen de laatste meting en de meest recente meting die minstens 4 jaar eerder ligt, gedeeld door de tijd daartussen. **Eerdere snelheid** = van de eerste meting tot het begin van die recente periode.
+
+Houd rekening met het volgende:
+- Een meting is op ongeveer 1 mm nauwkeurig. Over korte periodes is de snelheid dus wat onzeker.
+- Een meetbout zit in één gevel. De kleur zegt iets over die plek, niet over elk pand in de straat.
+- Grijs betekent "onbekend", niet "goed".
+- "Gestabiliseerd" is een aanwijzing voor herstel, geen bewijs. Check het bouwdossier of vraag de VvE.
+
+## Problemen?
+
+| Melding | Oplossing |
+|---|---|
+| `CERTIFICATE_VERIFY_FAILED` | Mac: dubbelklik op **Install Certificates.command** (zie stap 1) |
+| `command not found: python3` | Python installeren (stap 1), op Windows `py` gebruiken |
+| `server antwoordt 429/503` | Het script wacht en probeert het zelf opnieuw |
+| `HTTP 400` of een andere foutmelding | Kopieer de laatste regels uit het venster en bewaar ze om het probleem uit te zoeken |
+| Kaart blijft leeg | Controleer je internetverbinding; de kaartbibliotheek wordt online geladen |
