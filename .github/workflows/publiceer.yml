@@ -1,0 +1,89 @@
+name: Kaart bijwerken en publiceren
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"   # elke maandag rond 04:17 UTC
+  workflow_dispatch:         # handmatig starten via het tabblad Actions
+    inputs:
+      vernieuw:
+        description: "Alle metingen opnieuw ophalen (duurt langer)"
+        type: boolean
+        default: false
+      forceer:
+        description: "Ook publiceren als er veel minder data is dan vorige keer"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "zakkingskaart.py"
+      - ".github/workflows/publiceer.yml"
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  bouwen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write   # om de cache op de branch data-cache te bewaren
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache ophalen (branch data-cache)
+        run: |
+          mkdir -p cache
+          if git ls-remote --exit-code --heads origin data-cache > /dev/null; then
+            git fetch --depth=1 origin data-cache
+            git archive FETCH_HEAD | tar -x -C cache
+            echo "Cache hersteld:"; ls -la cache
+          else
+            echo "Nog geen cache; eerste run haalt alles op (10-30 minuten)."
+          fi
+
+      - name: Kaart maken
+        env:
+          ZK_FEEDBACK_URL: ${{ secrets.ZK_FEEDBACK_URL }}
+          VERNIEUW: ${{ inputs.vernieuw }}
+          FORCEER: ${{ inputs.forceer }}
+        run: |
+          ARGS="--site --cache cache --uitvoer site"
+          if [ "$VERNIEUW" = "true" ]; then ARGS="$ARGS --vernieuw"; fi
+          if [ "$FORCEER" = "true" ]; then ARGS="$ARGS --forceer"; fi
+          python3 zakkingskaart.py $ARGS
+
+      - name: Cache bewaren (branch data-cache)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(ls -A cache 2>/dev/null)" ]; then echo "Geen cache om te bewaren."; exit 0; fi
+          cd cache
+          printf '%s\n' '*.part.jsonl' '*.tmp' '*.state.json' '*.nieuw.*' '*.delta.*' > .gitignore
+          git init -q -b data-cache
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Cache bijgewerkt"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data-cache
+          du -sh --exclude=.git .
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  publiceren:
+    needs: bouwen
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
