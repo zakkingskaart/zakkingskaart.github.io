@@ -1,6 +1,8 @@
-# Zakkingskaart Amsterdam: zo draai je het script
+# Zakkingskaart: zo draai je het script
 
-Het script `zakkingskaart.py` haalt alle meetbouten en metingen op bij de gemeente Amsterdam. Het berekent per meetbout hoe snel de gevel zakt en maakt daar een kaart van die je in je browser opent. Je hebt alleen Python 3.8 of nieuwer nodig, geen extra pakketten.
+De Zakkingskaart laat zien hoe snel gebouwen in Nederland zakken. Voor heel Nederland gebruikt hij de NAP-peilmerken van Rijkswaterstaat; voor Amsterdam komt daar een veel fijnere laag bij: de meetbouten van de gemeente.
+
+Het script `zakkingskaart.py` haalt alle meetbouten en metingen op bij de gemeente Amsterdam (en in website-modus ook de NAP-peilmerken). Het berekent per meetbout hoe snel de gevel zakt en maakt daar een kaart van die je in je browser opent. Je hebt alleen Python 3.8 of nieuwer nodig, geen extra pakketten.
 
 ## 1. Eenmalig: Python controleren
 
@@ -119,6 +121,26 @@ De workflow `.github/workflows/publiceer.yml` draait elke maandagochtend, bij ee
 
 Eenmalig instellen: **Settings → Pages → Source: GitHub Actions**. Voor feedback zet je onder **Settings → Secrets and variables → Actions** het secret `ZK_FEEDBACK_URL` (zie hieronder). Mislukt een run, dan stuurt GitHub een e-mail naar het adres van het account. De vorige versie van de site blijft dan gewoon online.
 
+## NAP-peilmerken (heel Nederland)
+
+In website-modus haalt het script ook de NAP-peilmerken van Rijkswaterstaat op: ongeveer 50.000 bronzen bouten in huizen, bruggen en andere bouwwerken, met per peilmerk alle gemeten hoogtes (ruim 500.000 metingen). Bron: de openbare service `geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/nap/MapServer` (lagen 0 en 1 plus tabel 4). De licentie is CC0.
+
+- **Verversen:** eens per jaar (`--nap-ververs 365`), want peilmerken worden maar eens per 5 tot 15 jaar gemeten. De eerste keer duurt het ophalen een paar minuten.
+- **Rekenmethode:** van elk peilmerk worden, als ze er zijn, alleen de **herziene** waarden gebruikt (project-id met `=`, het huidige NAP-stelsel). Anders staan oude en herrekende hoogtes door elkaar en ontstaan nepsprongen van ongeveer 2 cm. Metingen binnen één jaar worden samengevoegd. Een reeks met meer dan 1 cm verschil binnen één campagne, een stap van meer dan 25 mm/jaar of meer dan 2 mm/jaar stijging telt als **onzeker** en wordt grijs. De recente snelheid wordt berekend zoals bij de meetbouten, met minimaal 8 jaar tussen de metingen.
+- **Op de kaart:** de laag staat standaard aan en de kaart opent op heel Nederland. Uitgezoomd (onder zoomniveau 11) zie je gekleurde vakjes: de mediaan van de peilmerken in dat vak. Klik op een vakje of zoom in voor de losse peilmerken (open rondjes). De meetreeksen (`nap_reeksen.json`) worden pas geladen als iemand op een peilmerk klikt. Zet een bezoeker de laag zelf uit, dan onthoudt de browser die keuze. Je kunt ook zoeken op peilmerknummer, bijvoorbeeld `025G0385`.
+- **Als het misgaat:** is Rijkswaterstaat onbereikbaar, dan wordt de oude cache gebruikt; zonder cache wordt de laag overgeslagen en blijft de rest van de site gewoon werken. Uitzetten kan met `--zonder-nap`.
+
+## Bezoekersstatistieken
+
+GitHub Pages en de domeinregistrar geven geen bezoekersaantallen. Daarom telt de site anoniem via hetzelfde Google Apps Script als de feedback (`feedback/Code.gs`). Per bezoek meldt de kaart alleen dat hij is geopend, of dat op mobiel of desktop gebeurt en wat de herkomst is (Google, andere zoekmachine, social, andere site of direct). Bij het verlaten volgt hoe vaak er is gezocht, een punt is bekeken en meetgegevens zijn geopend. Opgeslagen worden alleen totalen per dag, plus per maand de domeinnamen van verwijzende sites. Er worden geen cookies, IP-adressen of kenmerken per bezoeker opgeslagen, en lokaal of door bots wordt niets geteld.
+
+**Aanzetten:**
+1. Zet de nieuwe `Code.gs` in je Apps Script-project en kies **Implementeren → Implementaties beheren → bewerken (potlood) → Versie: Nieuwe versie → Implementeren**. De URL blijft gelijk.
+2. Kies bovenin de editor de functie **installeer** en klik op **Uitvoeren**. Geef de gevraagde toestemming.
+3. Je krijgt een mail met de link naar je privé-statistiekenpagina. Elke maandagochtend volgt een weekoverzicht.
+
+De teller gebruikt de feedback-URL (`ZK_FEEDBACK_URL`). Wil je hem uitzetten, gebruik dan `--zonder-teller`. Deel de statistiekenlink niet: wie hem heeft, kan de cijfers zien.
+
 ## Vindbaar in Google
 
 De site heeft een paginatitel, een beschrijving, een `robots.txt` en een `sitemap.xml`. Om Google de site te laten kennen en zoekstatistieken te zien:
@@ -165,8 +187,8 @@ De URL komt in de website te staan; dat kan niet anders. Hij bevat alleen een wi
 
 ## 6. De kaart gebruiken
 
-- **Zoeken:** typ een straat (`Rijnstraat`), een adres (`Rijnstraat 100`) of een meetbout-nummer.
-- **Lijnen** zijn straatdelen per bouwblok, gekleurd op de mediaan van de meetbouten daarin. **Punten** zijn de losse meetbouten.
+- **Zoeken:** typ een adres, straat, postcode of plaats ergens in Nederland, een meetbout-nummer of een peilmerknummer. Amsterdamse straten worden direct in de eigen gegevens gevonden. Al het andere gaat via de PDOK Locatieserver van de overheid (alleen de zoektekst wordt verstuurd).
+- **Open rondjes** zijn NAP-peilmerken (heel Nederland). **Lijnen** (alleen Amsterdam) zijn straatdelen per bouwblok, gekleurd op de mediaan van de meetbouten daarin. **Punten** zijn de losse meetbouten.
 - **Klik op een lijn** voor een lijst van alle bouten in dat straatdeel. **Klik op een punt** voor de cijfers en een grafiek van de zakking.
 - **Kleuren** (standaard):
   - rood: 2,0 mm/jaar of meer

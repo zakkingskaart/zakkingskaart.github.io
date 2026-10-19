@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zakkingskaart Amsterdam
-=======================
+Zakkingskaart
+=============
 
 Haalt alle meetbouten en hun metingen op bij de gemeente Amsterdam
 (api.data.amsterdam.nl/v1/meetbouten/), berekent per meetbout hoe snel de
-gevel zakt, en maakt daar een interactieve kaart van:
+gevel zakt, en maakt daar een interactieve kaart van. In website-modus komen
+daar de NAP-peilmerken van Rijkswaterstaat voor heel Nederland bij.
 
   rood    = zakt snel            (standaard: 2,0 mm/jaar of meer)
   geel    = zakt normaal         (standaard: 1,0 tot 2,0 mm/jaar)
@@ -31,7 +32,8 @@ Uitvoer (standaard in de map 'zakkingskaart_uitvoer'):
     meetbouten_analyse.csv        -> alle cijfers per meetbout (Excel, puntkomma)
     cache/                        -> opgehaalde ruwe data (voor snelle herhaling)
 
-Bron: Gemeente Amsterdam, dataset Meetbouten. De kleuren zijn een indicatie op
+Bronnen: Gemeente Amsterdam, dataset Meetbouten (CC0); Rijkswaterstaat, NAP-peilmerken
+(CC0). De kleuren zijn een indicatie op
 basis van gevelmetingen, geen oordeel over de fundering van een individueel pand.
 """
 
@@ -73,6 +75,13 @@ LEAFLET_CDNS = (  # pakketmap; bestanden staan in dist/, de licentie in de hoofd
     "https://cdn.jsdelivr.net/npm/leaflet@%s/" % LEAFLET_VERSION,
 )
 STATE_FILE = "zakkingskaart_state.json"
+
+# NAP-peilmerken van Rijkswaterstaat (heel Nederland, CC0). MapServer-laag 0 = actuele punten,
+# 1 = historische punten, tabel 4 = alle gemeten hoogtes per peilmerk.
+NAP_SERVICE = "https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/nap/MapServer"
+NAP_PUNTLAGEN = (0, 1)
+NAP_HISTORIE = 4
+NAP_PAGINA = 2000
 
 try:  # nette uitvoer op Windows-consoles
     sys.stdout.reconfigure(errors="replace")
@@ -751,11 +760,203 @@ def write_csv(path, rows, args, now_y):
                         classify(r, now_y, args.rood, args.geel, 1.5, 0.5, args.max_ouderdom, b["status"])])
 
 
+# --------------------------------------------------------------------------
+# NAP-peilmerken (Rijkswaterstaat)
+# --------------------------------------------------------------------------
+
+def arcgis_query_all(url, params, delay, max_pages=0, label=""):
+    """Haalt alle records op uit een ArcGIS REST-query, in pagina's van NAP_PAGINA."""
+    out, offset, pages = [], 0, 0
+    while True:
+        q = dict(params)
+        q.update({"f": "json", "resultOffset": str(offset), "resultRecordCount": str(NAP_PAGINA)})
+        data = http_get_json(url + "/query?" + urllib.parse.urlencode(q), retries=4)
+        if isinstance(data, dict) and data.get("error"):
+            err = data["error"]
+            raise RuntimeError(f"ArcGIS-fout {err.get('code')}: {err.get('message')}")
+        feats = (data or {}).get("features") or []
+        out.extend(feats)
+        pages += 1
+        if pages % 25 == 0 or not feats:
+            log(f"   {label}: {fmt_int(len(out))} records")
+        if not feats or (len(feats) < NAP_PAGINA and not data.get("exceededTransferLimit")):
+            break
+        offset += len(feats)
+        if (max_pages and pages >= max_pages) or pages > 2000:
+            break
+        if delay:
+            time.sleep(delay)
+    return out
+
+
+def fetch_nap(args, max_pages):
+    base = args.nap_service.rstrip("/")
+    punten = []
+    for laag in NAP_PUNTLAGEN:
+        feats = arcgis_query_all(base + "/" + str(laag), {
+            "where": "1=1", "outFields": "puntnummer,x_rd,y_rd,status,omschrijving",
+            "returnGeometry": "true", "outSR": "4326", "orderByFields": "objectid"},
+            args.pauze, max_pages, f"peilmerken (laag {laag})")
+        for f in feats:
+            a = f.get("attributes") or {}
+            g = f.get("geometry") or {}
+            lat, lon = g.get("y"), g.get("x")
+            if lat is None or lon is None:
+                try:
+                    lat, lon = rd_to_wgs84(float(a.get("x_rd")), float(a.get("y_rd")))
+                except (TypeError, ValueError):
+                    continue
+            if not a.get("puntnummer"):
+                continue
+            punten.append({"p": a["puntnummer"].strip(), "lat": round(lat, 6), "lon": round(lon, 6),
+                           "s": (a.get("status") or "").strip(), "o": re.sub(r"\s+", " ", a.get("omschrijving") or "").strip()})
+    hist = []
+    for f in arcgis_query_all(base + "/" + str(NAP_HISTORIE), {
+            "where": "1=1", "outFields": "puntnummer,project_id,projectdatum,hoogte",
+            "returnGeometry": "false", "orderByFields": "objectid"}, args.pauze, max_pages, "NAP-historie"):
+        a = f.get("attributes") or {}
+        if a.get("puntnummer") and a.get("projectdatum") is not None and a.get("hoogte") is not None:
+            hist.append({"p": a["puntnummer"].strip(), "j": a.get("project_id") or "",
+                         "d": a["projectdatum"], "h": a["hoogte"]})
+    return punten, hist
+
+
+def update_nap(cache_dir, args, max_pages, state):
+    """Peilmerken + historie, met eigen cache. Wordt eens per --nap-ververs dagen opnieuw
+    opgehaald (peilmerken worden maar eens per 5-15 jaar gemeten). Mislukt het ophalen,
+    dan wordt de oude cache gebruikt; zonder cache wordt de laag overgeslagen."""
+    fp = os.path.join(cache_dir, "nap_punten.jsonl.gz")
+    fh = os.path.join(cache_dir, "nap_historie.jsonl.gz")
+    have = os.path.exists(fp) and os.path.exists(fh)
+    age = days_since(state.get("napOpgehaald"))
+    if have and not args.vernieuw and age is not None and age < args.nap_ververs:
+        log(f"-> NAP-peilmerken: uit cache (opgehaald {state.get('napOpgehaald')})")
+        return load_jsonl_gz(fp), load_jsonl_gz(fh)
+    log("-> NAP-peilmerken: ophalen bij Rijkswaterstaat")
+    try:
+        punten, hist = fetch_nap(args, max_pages)
+        prev = state.get("napAantallen") or {}
+        if prev and not args.proef and (len(punten) < 0.9 * prev.get("punten", 0) or len(hist) < 0.9 * prev.get("metingen", 0)):
+            raise RuntimeError(f"veel minder data dan vorige keer ({len(punten)} punten, {len(hist)} metingen; "
+                               f"was {prev.get('punten')}, {prev.get('metingen')})")
+        if not punten or not hist:
+            raise RuntimeError("geen peilmerken of metingen ontvangen")
+        write_jsonl_gz(fp, punten)
+        write_jsonl_gz(fh, hist)
+        state["napOpgehaald"] = date.today().isoformat()
+        state["napAantallen"] = {"punten": len(punten), "metingen": len(hist)}
+        log(f"   klaar: {fmt_int(len(punten))} peilmerken, {fmt_int(len(hist))} metingen")
+        return punten, hist
+    except (RuntimeError, FatalHTTP) as e:
+        log(f"   let op: NAP-peilmerken niet opgehaald ({e})")
+        if have:
+            log("   oude NAP-cache wordt gebruikt")
+            return load_jsonl_gz(fp), load_jsonl_gz(fh)
+        log("   de NAP-laag wordt deze keer overgeslagen")
+        return None
+
+
+def nap_series(meas):
+    """Meetreeks van één peilmerk. Bevat de reeks herziene waarden (project-id met '='; dat is
+    het huidige NAP-stelsel), dan worden alleen die gebruikt: anders staan oude en herrekende
+    hoogtes door elkaar en ontstaan nepsprongen van centimeters."""
+    herzien = [m for m in meas if "=" in (m.get("j") or "")]
+    use = herzien if herzien else meas
+    pts = {}
+    for m in use:
+        try:
+            t = date(1970, 1, 1) + timedelta(milliseconds=int(m["d"]))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        ty = t.year + (t.timetuple().tm_yday - 1) / 365.25
+        pts[round(ty, 3)] = (ty, float(m["h"]), t.isoformat())
+    pts = [pts[k] for k in sorted(pts)]
+    # Metingen binnen een jaar horen bij dezelfde meetcampagne: samenvoegen. Verschillen ze
+    # meer dan 1 cm, dan is de reeks onbetrouwbaar (dubbele of herrekende waarde).
+    serie, onzeker, groep = [], False, []
+    for p in pts + [None]:
+        if p is not None and groep and p[0] - groep[0][0] < 1.0:
+            groep.append(p)
+            continue
+        if groep:
+            hs = [g[1] for g in groep]
+            if max(hs) - min(hs) > 0.010:
+                onzeker = True
+            serie.append((sum(g[0] for g in groep) / len(groep), sum(hs) / len(hs), groep[-1][2]))
+        groep = [p] if p is not None else []
+    return serie, bool(herzien), onzeker
+
+
+def nap_analyse(serie, min_span=8.0):
+    """Snelheden in mm/jaar (positief = zakt). 'recent': laatste meting t.o.v. de meest recente
+    meting minstens min_span jaar eerder. 'totaal': kleinste-kwadratenlijn over de hele reeks.
+    'sprong': een stap van meer dan 25 mm/jaar tussen metingen die minstens 3 jaar uit elkaar
+    liggen; dat is voor een gebouw onwaarschijnlijk en wijst op een stelsel- of meetfout."""
+    n = len(serie)
+    r = {"n": n, "recent": None, "rfrom": None, "total": None, "first": None, "last": None, "lastY": None, "sprong": False}
+    if not n:
+        return r
+    r["first"], r["last"], r["lastY"] = serie[0][2], serie[-1][2], serie[-1][0]
+    if n >= 2 and serie[-1][0] - serie[0][0] >= min_span:
+        ts = [p[0] for p in serie]
+        hs = [p[1] for p in serie]
+        mt, mh = sum(ts) / n, sum(hs) / n
+        den = sum((t - mt) ** 2 for t in ts)
+        if den > 0:
+            r["total"] = -1000.0 * sum((t - mt) * (h - mh) for t, h in zip(ts, hs)) / den
+        t1, h1 = serie[-1][0], serie[-1][1]
+        cand = [p for p in serie[:-1] if t1 - p[0] >= min_span]
+        if cand:
+            p = cand[-1]
+            r["recent"] = -1000.0 * (h1 - p[1]) / (t1 - p[0])
+            r["rfrom"] = p[0]
+    for a, b in zip(serie, serie[1:]):
+        dt = b[0] - a[0]
+        if dt >= 1 and abs(b[1] - a[1]) * 1000.0 / dt > 25:
+            r["sprong"] = True
+    if r["recent"] is not None and r["recent"] < -2.0:  # meer dan 2 mm/jaar rijzen: onwaarschijnlijk
+        r["sprong"] = True
+    return r
+
+
+def build_nap(punten, hist, args):
+    """Maakt de compacte gegevens voor de kaart: punten (lui geladen) en reeksen (bij de eerste klik)."""
+    by_p = {}
+    for m in hist:
+        by_p.setdefault(m["p"], []).append(m)
+    rows, reeksen, seen = [], [], set()
+    stats = {"punten": 0, "metReeks": 0, "herzien": 0, "sprong": 0}
+    for pt in punten:
+        if pt["p"] in seen:
+            continue
+        seen.add(pt["p"])
+        serie, herzien, onzeker = nap_series(by_p.get(pt["p"], []))
+        r = nap_analyse(serie)
+        r["sprong"] = r["sprong"] or onzeker
+        stats["punten"] += 1
+        stats["metReeks"] += 1 if r["recent"] is not None else 0
+        stats["herzien"] += 1 if herzien else 0
+        stats["sprong"] += 1 if r["sprong"] else 0
+        rows.append([pt["p"], pt["lat"], pt["lon"], pt["o"], pt["s"], r["n"], r["first"] or "", r["last"] or "",
+                     r2(r["lastY"], 3), r2(r["recent"]), r2(r["rfrom"], 2), r2(r["total"]), 1 if r["sprong"] else 0])
+        ser = None
+        if len(serie) >= 2:
+            h0 = serie[0][1]
+            ser = []
+            for t, h, _ in serie:
+                ser.append(round(t - 1900, 2))
+                ser.append(round((h0 - h) * 1000.0, 1))  # zakking in mm sinds de eerste meting
+        reeksen.append(ser)
+    log(f"   NAP: {fmt_int(stats['punten'])} peilmerken, {fmt_int(stats['metReeks'])} met een reeks van 8+ jaar, "
+        f"{fmt_int(stats['herzien'])} met herziene waarden, {fmt_int(stats['sprong'])} met een verdachte sprong")
+    return rows, reeksen
+
+
 def short_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
 
 
-def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y):
+def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None):
     """Website-modus: een lichte index.html die data.json ophaalt; de meetreeksen voor de
     grafiekjes staan apart in reeksen.json en worden na het tekenen van de kaart geladen.
     Bestandsnamen krijgen een ?v=<hash> zodat browsers na een update de nieuwe data pakken."""
@@ -767,6 +968,18 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y):
 
     meta = dict(meta)
     meta["site"] = True
+    for fn in ("nap.json", "nap_reeksen.json"):
+        if not nap and os.path.exists(os.path.join(out_dir, fn)):
+            os.remove(os.path.join(out_dir, fn))
+    if nap:
+        nap_rows, nap_reeksen, nap_datum = nap
+        nr = json.dumps(nap_reeksen, ensure_ascii=False, separators=(",", ":"))
+        write_text(os.path.join(out_dir, "nap_reeksen.json"), nr)
+        nd = json.dumps({"p": nap_rows, "reeksen": "nap_reeksen.json?v=" + short_hash(nr), "opgehaald": nap_datum},
+                        ensure_ascii=False, separators=(",", ":"))
+        write_text(os.path.join(out_dir, "nap.json"), nd)
+        meta["napUrl"] = "nap.json?v=" + short_hash(nd)
+        meta["napCount"] = len(nap_rows)
     core = [b[:17] + [None] for b in Bdata]
     if not args.zonder_grafieken:
         reeksen = json.dumps([b[17] for b in Bdata], ensure_ascii=False, separators=(",", ":"))
@@ -784,13 +997,13 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y):
     if not site_url.endswith("/"):
         site_url += "/"
     esc = lambda s: (s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;"))
-    descr = ("Onafhankelijke kaart van gevelzakking in Amsterdam, op basis van de openbare meetbouten van de "
-             "gemeente. Zoek je straat of adres en zie hoe snel gevels de laatste jaren zakken.")
+    descr = ("Onafhankelijke kaart van zakkende gebouwen in Nederland, op basis van open data: de NAP-peilmerken van "
+             "Rijkswaterstaat en, in Amsterdam, de meetbouten van de gemeente. Zoek je adres en zie hoe snel het zakt.")
     head = [
         f'<link rel="canonical" href="{esc(site_url)}">',
         '<meta property="og:type" content="website">',
         '<meta property="og:locale" content="nl_NL">',
-        '<meta property="og:title" content="Zakkingskaart Amsterdam">',
+        '<meta property="og:title" content="Zakkingskaart">',
         f'<meta property="og:description" content="{esc(descr)}">',
         f'<meta property="og:url" content="{esc(site_url)}">',
     ]
@@ -850,7 +1063,12 @@ def main():
     ap.add_argument("--google-verificatie", default=os.environ.get("ZK_GOOGLE_VERIFICATIE", ""),
                     help="--site: code van Google Search Console (meta-tag google-site-verification), "
                          "ook via ZK_GOOGLE_VERIFICATIE")
+    ap.add_argument("--zonder-nap", action="store_true",
+                    help="--site: geen laag met NAP-peilmerken van Rijkswaterstaat (heel Nederland)")
+    ap.add_argument("--nap-ververs", type=int, default=365,
+                    help="--site: NAP-peilmerken opnieuw ophalen als de cache zoveel dagen oud is (standaard 365)")
     ap.add_argument("--api", default=API, help=argparse.SUPPRESS)  # alleen voor testen
+    ap.add_argument("--nap-service", default=NAP_SERVICE, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--vernieuw", action="store_true", help="data opnieuw ophalen en de cache negeren")
     ap.add_argument("--proef", action="store_true", help="snelle proefrun: alleen de eerste paar pagina's ophalen")
     ap.add_argument("--paginagrootte", type=int, default=2000, help="records per verzoek (standaard 2000)")
@@ -888,7 +1106,7 @@ def main():
     max_pages = 3 if args.proef else 0
     state = load_state(cache_dir) if args.site else {}
 
-    log("Zakkingskaart Amsterdam" + (" (website)" if args.site else ""))
+    log("Zakkingskaart" + (" (website)" if args.site else ""))
     log("=======================")
     log(f"Uitvoer: {out_dir}")
     if args.site:
@@ -1019,7 +1237,13 @@ def main():
             log("De bestaande site blijft staan. Klopt het toch, draai dan opnieuw met --forceer.")
             save_state(cache_dir, state)
             sys.exit(3)
-        html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y)
+        nap = None
+        if not args.zonder_nap:
+            got = update_nap(cache_dir, args, max_pages, state)
+            if got:
+                nap_rows, nap_reeksen = build_nap(got[0], got[1], args)
+                nap = (nap_rows, nap_reeksen, state.get("napOpgehaald") or "")
+        html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap)
         csv_path = os.path.join(out_dir, "meetbouten_analyse.csv")
         if not args.proef:
             state["vorigePublicatie"] = {"datum": today.isoformat(), "meetbouten": len(rows),
@@ -1084,8 +1308,8 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zakkingskaart Amsterdam: hoe snel zakken de gevels in jouw straat?</title>
-<meta name="description" content="Onafhankelijke kaart van gevelzakking in Amsterdam, op basis van de openbare meetbouten van de gemeente. Zoek je straat of adres en zie hoe snel gevels de laatste jaren zakken.">
+<title>Zakkingskaart: hoe snel zakken de gebouwen in jouw buurt?</title>
+<meta name="description" content="Onafhankelijke kaart van zakkende gebouwen in Nederland, op basis van open data: de NAP-peilmerken van Rijkswaterstaat en, in Amsterdam, de meetbouten van de gemeente. Zoek je adres en zie hoe snel het de laatste jaren zakt.">
 __HEAD_EXTRA__
 <link rel="stylesheet" href="__LEAFLET_CSS__">
 <style>
@@ -1191,12 +1415,17 @@ table.mt tr.rec td{background:#fbf6e6}
 .msum b{font-variant-numeric:tabular-nums}
 pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;max-height:45vh;overflow:auto;white-space:pre;margin:0}
 .warn{background:#fff3cd;border:1px solid #f0d58a;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px}
+.naprow{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+.naprow[hidden]{display:none}
+.sw.ring{width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 2.5px var(--accent)}
+#napnote{margin:4px 0 0}
+#napnote:empty{display:none}
 </style>
 </head>
 <body>
-<div id="map" role="application" aria-label="Kaart met meetbouten"></div>
+<div id="map" role="application" aria-label="Kaart met meetbouten en NAP-peilmerken"></div>
 <form id="search" class="panel" autocomplete="off">
-  <input id="q" list="streets" placeholder="Zoek een straat, adres of meetbout-nummer" aria-label="Zoeken">
+  <input id="q" list="streets" placeholder="Zoek een adres, straat of plaats in Nederland" aria-label="Zoeken">
   <button type="submit">Zoek</button>
   <datalist id="streets"></datalist>
 </form>
@@ -1220,15 +1449,19 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <div class="mbox"><div class="mhead"><div><h2 id="aTitle">Over deze kaart</h2></div><button id="aClose" type="button" aria-label="Sluiten">&times;</button></div>
   <div id="aBody">
     <h3>Onafhankelijk initiatief</h3>
-    <p>Zakkingskaart is een onafhankelijk, niet-commercieel initiatief. Het is geen website van de gemeente Amsterdam en wordt niet door de gemeente gemaakt, gecontroleerd of goedgekeurd.</p>
+    <p>Zakkingskaart is een onafhankelijk, niet-commercieel initiatief. Het is geen website van een gemeente of van Rijkswaterstaat en wordt niet door hen gemaakt, gecontroleerd of goedgekeurd.</p>
     <h3>Wat de kaart laat zien</h3>
-    <p>De kaart gebruikt de openbare meetboutgegevens van de gemeente Amsterdam en wordt wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;, vaak na funderingsherstel) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
+    <p>De kaart laat zien hoe snel gebouwen in Nederland zakken. Voor heel Nederland gebruikt ze de NAP-peilmerken van Rijkswaterstaat; voor Amsterdam daarnaast de veel fijnmazigere meetbouten van de gemeente.</p>
+    <h3>Amsterdam: meetbouten</h3>
+    <p>In Amsterdam gebruikt de kaart de openbare meetboutgegevens van de gemeente en wordt ze wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;, vaak na funderingsherstel) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
+    <h3>Heel Nederland: NAP-peilmerken</h3>
+    <p>Een NAP-peilmerk is een bronzen bout in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de mediaan van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk beweegt mee met de bodemdaling van de hele omgeving; het zegt dus iets over de plek, niet per se over de fundering van dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de reeks een onverklaarde sprong bevat, zijn grijs.</p>
     <h3>Disclaimer</h3>
-    <p>De kleuren zijn een berekende indicatie op basis van metingen aan gevels. Ze zijn geen oordeel over de fundering, de staat of de waarde van een pand, en kunnen onvolledig of verouderd zijn. Aan deze kaart kunnen geen rechten worden ontleend. Neem je een beslissing over een pand, laat dan een funderingsonderzoek doen door een deskundige en raadpleeg de officiële gegevens van de gemeente.</p>
+    <p>De kleuren zijn een berekende indicatie op basis van metingen aan gevels. Ze zijn geen oordeel over de fundering, de staat of de waarde van een pand, en kunnen onvolledig of verouderd zijn. Aan deze kaart kunnen geen rechten worden ontleend. Neem je een beslissing over een pand, laat dan een funderingsonderzoek doen door een deskundige en raadpleeg de officiële gegevens van de gemeente en Rijkswaterstaat.</p>
     <h3>Privacy</h3>
-    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
+    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
     <h3>Bronnen</h3>
-    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
+    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. NAP-peilmerken: Rijkswaterstaat (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
   </div></div>
 </div>
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
@@ -1236,12 +1469,16 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <div id="mBody"></div></div>
 </div>
 <aside id="legend" class="panel">
-  <div class="head"><h1>Zakkingskaart Amsterdam</h1><div class="btns"><button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="In- of uitklappen">–</button></div></div>
-  <p class="indep">Onafhankelijk initiatief, los van de gemeente Amsterdam · <a href="#over" id="aboutLink">Over &amp; disclaimer</a></p>
+  <div class="head"><h1>Zakkingskaart</h1><div class="btns"><button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="In- of uitklappen">–</button></div></div>
+  <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a></p>
   <div class="body">
     <div class="rows" id="rows"></div>
     <p class="note" id="viewnote">Aantallen: meetbouten in beeld.</p>
-    <p class="note">Lijnen = straatdeel (per bouwblok, mediaan van de bouten). Klik op een lijn of punt voor details.</p>
+    <p class="note"><b>Amsterdam:</b> lijnen en punten zijn meetbouten van de gemeente (per gevel; lijn = straatdeel, mediaan van de bouten). <b>Heel Nederland:</b> open rondjes zijn NAP-peilmerken. Klik voor details.</p>
+    <div class="naprow" id="naprow" hidden>
+      <label class="row"><input type="checkbox" id="cNap"><i class="sw ring"></i><span class="lbl">NAP-peilmerken<small>Rijkswaterstaat, heel Nederland · eens per 5–15 jaar gemeten</small></span><span class="cnt" id="cnt-nap">–</span></label>
+      <p class="note" id="napnote"></p>
+    </div>
     <details id="settings">
       <summary>Grenzen aanpassen</summary>
       <div class="set">
@@ -1314,9 +1551,9 @@ const KL=["rood","geel","groen","stab","oud"];
 const COL={rood:"#d7301f",geel:"#e6a700",groen:"#1a9850",stab:"#1a9850",oud:"#9a9a9a"};
 const RING="#08306b";
 const DEF={red:M.defaults.red,yellow:M.defaults.yellow,stabEarly:M.defaults.stabEarly,stabNow:M.defaults.stabNow,
-  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{rood:true,geel:true,groen:true,stab:true,oud:true},base:"pdokgrijs"};
+  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{rood:true,geel:true,groen:true,stab:true,oud:true},base:"pdokgrijs",showNap:true};
 let S=JSON.parse(JSON.stringify(DEF));
-try{const s=JSON.parse(localStorage.getItem("zakkingskaart.v1")||"null");if(s){S=Object.assign(S,s);S.show=Object.assign({},DEF.show,s.show||{});}}catch(e){}
+try{const s=JSON.parse(localStorage.getItem("zakkingskaart.v1")||"null");if(s){S=Object.assign(S,s);S.show=Object.assign({},DEF.show,s.show||{});if(!s.napKeuze)S.showNap=DEF.showNap;}}catch(e){}
 function save(){try{localStorage.setItem("zakkingskaart.v1",JSON.stringify(S));}catch(e){}}
 
 const nf=(v,d=2)=>v==null?"–":Number(v).toLocaleString("nl-NL",{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -1343,7 +1580,7 @@ function cls(b){
 }
 
 // ---------- kaart ----------
-const map=L.map("map",{preferCanvas:true,zoomSnap:0.5,minZoom:10}).setView([52.36,4.9],13);
+const map=L.map("map",{preferCanvas:true,zoomSnap:0.5,minZoom:7}).setView([52.36,4.9],13);
 const rend=L.canvas({padding:0.4,tolerance:6});
 const PDOK="https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/";
 const pdokOpt={maxNativeZoom:19,maxZoom:21,attribution:"Achtergrond: <a href=\"https://www.pdok.nl\" target=\"_blank\" rel=\"noopener\">PDOK</a> / Kadaster (BRT)"};
@@ -1383,7 +1620,8 @@ const dots=B.map((b,i)=>{
   return m;
 });
 const bounds=L.latLngBounds(B.filter(b=>isFinite(b[I.lat])&&isFinite(b[I.lon])).map(b=>[b[I.lat],b[I.lon]]));
-if(bounds.isValid())map.fitBounds(bounds,{padding:[20,20],maxZoom:15});
+if(M.napUrl)map.fitBounds([[50.75,3.36],[53.55,7.23]]);
+else if(bounds.isValid())map.fitBounds(bounds,{padding:[20,20],maxZoom:15});
 
 let C=[],GC=[];
 function groupClass(gi){
@@ -1418,6 +1656,7 @@ function styleAll(){
     else if(vis&&added&&m.bringToFront){m.bringToFront();}
   }
   counts();
+  napRefresh(true);
 }
 function resize(){
   const sz=sizes();
@@ -1456,27 +1695,28 @@ for(const id in fld)document.getElementById(id).addEventListener("change",e=>{
 });
 document.getElementById("cStale").addEventListener("change",e=>{S.colorStale=e.target.checked;save();styleAll();});
 document.getElementById("cDots").addEventListener("change",e=>{S.showDots=e.target.checked;save();styleAll();});
-document.getElementById("reset").addEventListener("click",()=>{const base=S.base;S=JSON.parse(JSON.stringify(DEF));S.base=base;save();fillSettings();buildRows();styleAll();});
+document.getElementById("reset").addEventListener("click",()=>{const base=S.base,nap=S.showNap,nk=S.napKeuze;S=JSON.parse(JSON.stringify(DEF));S.base=base;S.showNap=nap;if(nk)S.napKeuze=true;save();fillSettings();buildRows();styleAll();});
 const legend=document.getElementById("legend"),tg=document.getElementById("toggle");
 tg.addEventListener("click",()=>{const c=legend.classList.toggle("collapsed");tg.textContent=c?"+":"–";tg.setAttribute("aria-expanded",String(!c));});
 if(window.innerWidth<640){legend.classList.add("collapsed");tg.textContent="+";tg.setAttribute("aria-expanded","false");}
 L.DomEvent.disableClickPropagation(legend);L.DomEvent.disableScrollPropagation(legend);
 L.DomEvent.disableClickPropagation(document.getElementById("search"));
-document.getElementById("src").innerHTML="Bron: Gemeente Amsterdam, meetbouten (api.data.amsterdam.nl), opgehaald "+fmtDate(M.generated)+". "+
+document.getElementById("src").innerHTML=(M.napUrl?"Bronnen: Rijkswaterstaat, NAP-peilmerken (heel Nederland, CC0) en ":"Bron: ")+"Gemeente Amsterdam, meetbouten (api.data.amsterdam.nl), opgehaald "+fmtDate(M.generated)+". "+
   M.count.toLocaleString("nl-NL")+" meetbouten, waarvan "+M.withSeries.toLocaleString("nl-NL")+" met een meetreeks van minstens "+nf(M.minSpan,0)+" jaar. "+
   "Snelheid = verschil tussen de laatste meting en de meest recente meting die minstens "+nf(M.minSpan,0)+" jaar eerder ligt. "+
   "Indicatie op basis van gevelmetingen, geen funderingsoordeel."+(M.proef?" <b>Proefrun: onvolledige data.</b>":"");
 
 // ---------- popups ----------
-function chart(b,c){
-  const s=b[I.ser];if(!s||s.length<4)return"";
+function chart(b,c){return chartSeries(b[I.ser],b[I.rfrom],c);}
+function chartSeries(s,rf,c){
+  if(!s||s.length<4)return"";
   const W=290,H=130,l=38,r=10,t=10,bt=22;const ts=[],cs=[];
   for(let k=0;k<s.length;k+=2){ts.push(s[k]+1900);cs.push(s[k+1]);}
   const t0=Math.floor(ts[0]),t1=Math.ceil(ts[ts.length-1])||t0+1;
   const cmin=Math.min(0,...cs),cmax=Math.max(1,...cs);
   const X=v=>l+(v-t0)/((t1-t0)||1)*(W-l-r),Y=v=>t+(v-cmin)/((cmax-cmin)||1)*(H-t-bt);
   const all=ts.map((v,k)=>X(v).toFixed(1)+","+Y(cs[k]).toFixed(1)).join(" ");
-  let rec="";const rf=b[I.rfrom];
+  let rec="";
   if(rf!=null){const pts=ts.map((v,k)=>[v,cs[k]]).filter(p=>p[0]>=rf-1e-6);rec='<polyline points="'+pts.map(p=>X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join(" ")+'" fill="none" stroke="'+COL[c]+'" stroke-width="3" stroke-linecap="round"/>';}
   const dotsS=ts.map((v,k)=>'<circle cx="'+X(v).toFixed(1)+'" cy="'+Y(cs[k]).toFixed(1)+'" r="2.6" fill="#24507a"/>').join("");
   return '<svg class="chart" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Cumulatieve zakking">'+
@@ -1598,10 +1838,18 @@ document.getElementById("search").addEventListener("submit",e=>{
   e.preventDefault();
   const q=document.getElementById("q").value.trim();if(!q)return;
   TEL.tel("zoek");
+  if(M.napUrl&&/^\d{3}[a-z]\d{4}$/i.test(q)){napFind(q);return;}
   if(/^\d{5,}$/.test(q)){const i=B.findIndex(b=>String(b[I.id])===q);if(i>=0){map.setView([B[i][I.lat],B[i][I.lon]],18);setTimeout(()=>openBout(i),300);return;}}
-  const base=q.toLowerCase().replace(/\s+\d.*$/,"").trim();
-  let key=byStreet.has(base)?base:(streetKeys.find(k=>k.startsWith(base))||streetKeys.find(k=>k.includes(base)));
-  if(!key){say("Niets gevonden voor “"+q+"”.");return;}
+  // 1. een Amsterdamse straat uit de meetboutgegevens (exacte naam, geen andere plaats genoemd)
+  const qa=q.replace(/[,\s]+amsterdam\s*$/i,"").trim();
+  const anders=/,|\b\d{4}\s?[a-z]{2}\b/i.test(qa);
+  const base=qa.toLowerCase().replace(/\s+\d.*$/,"").trim();
+  if(!anders&&byStreet.has(base)){showStreet(base,qa);return;}
+  // 2. elk adres of elke plaats in Nederland via de PDOK Locatieserver (overheid, open data)
+  zoekPdok(q).then(ok=>{if(!ok&&!fuzzyStreet(qa))say("Niets gevonden voor “"+q+"”.");})
+    .catch(()=>{if(!fuzzyStreet(qa))say("Zoeken lukte niet. Probeer het later nog eens.");});
+});
+function showStreet(key,q){
   const idx=byStreet.get(key);
   const num=q.match(/\s(\d+)/);
   if(num){const n=parseInt(num[1],10);let best=null,bd=1e9;for(const i of idx){const h=houseNo(B[i][I.addr]);if(Math.abs(h-n)<bd){bd=Math.abs(h-n);best=i;}}
@@ -1609,7 +1857,24 @@ document.getElementById("search").addEventListener("submit",e=>{
   const bb=L.latLngBounds(idx.map(i=>[B[i][I.lat],B[i][I.lon]]));
   map.fitBounds(bb,{maxZoom:17,padding:[60,60]});
   setTimeout(()=>openList(nameOf.get(key),idx,bb.getCenter()),400);
-});
+}
+function fuzzyStreet(q){
+  const base=q.toLowerCase().replace(/\s+\d.*$/,"").trim();if(base.length<3)return false;
+  const key=streetKeys.find(k=>k.startsWith(base))||streetKeys.find(k=>k.includes(base));
+  if(!key)return false;showStreet(key,q);return true;
+}
+const PDOK_LS="https://api.pdok.nl/bzk/locatieserver/search/v3_1/free";
+function zoekPdok(q){
+  const u=PDOK_LS+"?rows=1&fl=weergavenaam,type,centroide_ll&fq="+encodeURIComponent("type:(adres OR weg OR postcode OR woonplaats OR gemeente)")+"&q="+encodeURIComponent(q);
+  return fetch(u).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(j=>{
+    const d=j&&j.response&&j.response.docs&&j.response.docs[0];if(!d||!d.centroide_ll)return false;
+    const m=String(d.centroide_ll).match(/POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);if(!m)return false;
+    const z=({adres:18,postcode:17,weg:16,woonplaats:13,gemeente:12})[d.type]||15;
+    map.setView([parseFloat(m[2]),parseFloat(m[1])],z);
+    say(d.weergavenaam||q);
+    return true;
+  });
+}
 
 // ---------- feedback ----------
 (function(){
@@ -1649,6 +1914,116 @@ document.getElementById("search").addEventListener("submit",e=>{
   });
   L.DomEvent.disableClickPropagation(btn);
 })();
+
+// ---------- NAP-peilmerken (Rijkswaterstaat, heel Nederland) ----------
+// Lui geladen: pas als de laag aan staat. Getekend binnen beeld vanaf zoom NAP.MINZ.
+const NI={p:0,lat:1,lon:2,oms:3,status:4,n:5,first:6,last:7,lastY:8,recent:9,rfrom:10,total:11,sprong:12};
+const NAP={rows:null,ser:null,serState:"",state:"",layer:L.layerGroup(),mk:new Map(),shown:new Set(),MINZ:11,STALE:20,cur:null,z:null,ver:0};
+if(map.createPane){map.createPane("napgrid");const gp=map.getPane&&map.getPane("napgrid");if(gp)gp.style.zIndex=350;}
+const GRID={layer:L.layerGroup(),rend:L.canvas({pane:"napgrid",padding:0.3}),cells:{}};
+const napRow=document.getElementById("naprow"),napCb=document.getElementById("cNap"),napNoteEl=document.getElementById("napnote");
+if(M.napUrl){napRow.hidden=false;napCb.checked=!!S.showNap;
+  napCb.addEventListener("change",()=>{S.showNap=napCb.checked;S.napKeuze=true;save();napRefresh(true);});}
+function napNote(t){napNoteEl.textContent=t||"";}
+function napCls(r){
+  if(r[NI.recent]==null||r[NI.sprong])return"oud";
+  if(M.nowYear-r[NI.lastY]>NAP.STALE)return"oud";
+  const v=r[NI.recent];return v>=S.red?"rood":v>=S.yellow?"geel":"groen";
+}
+function napLoad(){
+  if(NAP.state==="laden")return;NAP.state="laden";napNote("Peilmerken laden …");
+  fetch(M.napUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(d=>{NAP.rows=d.p||[];NAP.serUrl=d.reeksen;NAP.opgehaald=d.opgehaald||"";NAP.state="ok";napRefresh(true);})
+  .catch(e=>{NAP.state="fout";napNote("De peilmerken konden niet worden geladen ("+(e&&e.message||e)+").");});
+}
+function napLoadSer(){
+  if(NAP.ser||NAP.serState==="laden"||!NAP.serUrl)return;NAP.serState="laden";
+  fetch(NAP.serUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(a=>{NAP.ser=a;NAP.serState="ok";if(NAP.cur&&map.hasLayer(NAP.cur.p))napOpen(NAP.cur.i);})
+  .catch(()=>{NAP.serState="fout";if(NAP.cur&&map.hasLayer(NAP.cur.p))napOpen(NAP.cur.i);});
+}
+function napStyle(m,i){
+  const c=napCls(NAP.rows[i]),z=map.getZoom();
+  m.setStyle({radius:z>=16?7:z>=14?6:5,color:COL[c],weight:z>=14?3:2.5,opacity:c==="oud"?.75:1,fillColor:"#ffffff",fillOpacity:1});m._zkVer=NAP.ver;
+}
+function napRefresh(restyle){
+  if(!M.napUrl)return;
+  const on=!!S.showNap;napCb.checked=on;
+  const cnt=document.getElementById("cnt-nap");
+  if(!on){if(map.hasLayer(NAP.layer))map.removeLayer(NAP.layer);napGridClear();napNote("");cnt.textContent="–";return;}
+  if(!NAP.rows){napLoad();return;}
+  if(!map.hasLayer(NAP.layer))NAP.layer.addTo(map);
+  const z=map.getZoom();if(z!==NAP.z){NAP.z=z;restyle=true;}
+  if(restyle)NAP.ver++;
+  if(z<NAP.MINZ){NAP.layer.clearLayers();NAP.shown=new Set();napGrid(z,cnt);return;}
+  napGridClear();napNote("");
+  const bb=map.getBounds(),wide=bb.pad?bb.pad(0.25):bb,want=new Set();let inView=0;
+  for(let i=0;i<NAP.rows.length;i++){const r=NAP.rows[i];if(wide.contains([r[NI.lat],r[NI.lon]])){want.add(i);if(bb.contains([r[NI.lat],r[NI.lon]]))inView++;}}
+  for(const i of NAP.shown)if(!want.has(i))NAP.layer.removeLayer(NAP.mk.get(i));
+  for(const i of want){
+    let m=NAP.mk.get(i);
+    if(!m){const r=NAP.rows[i];m=L.circleMarker([r[NI.lat],r[NI.lon]],{renderer:rend});
+      m.on("click",e=>{L.DomEvent.stopPropagation(e);napOpen(i);});NAP.mk.set(i,m);}
+    if(m._zkVer!==NAP.ver)napStyle(m,i);
+    if(!NAP.shown.has(i))NAP.layer.addLayer(m);
+  }
+  NAP.shown=want;cnt.textContent=inView.toLocaleString("nl-NL");
+}
+map.on("moveend",()=>napRefresh(false));
+// Uitgezoomd: vakjes met de mediaan van de recente zakking van de peilmerken erin.
+function napCells(zf){
+  if(GRID.cells[zf])return GRID.cells[zf];
+  const d=({7:0.16,8:0.08,9:0.04,10:0.02})[zf]||(zf<7?0.32:0.02),dl=d*1.6,cells=new Map();
+  for(let i=0;i<NAP.rows.length;i++){const r=NAP.rows[i];
+    const a=Math.floor(r[NI.lat]/d),o=Math.floor(r[NI.lon]/dl),k=a+":"+o;
+    let c=cells.get(k);if(!c){c={s:a*d,w:o*dl,n:a*d+d,e:o*dl+dl,idx:[]};cells.set(k,c);}c.idx.push(i);}
+  return GRID.cells[zf]=[...cells.values()];
+}
+function napGridClear(){GRID.layer.clearLayers();if(map.hasLayer(GRID.layer))map.removeLayer(GRID.layer);}
+function napGrid(z,cnt){
+  const zf=Math.floor(z),bb=map.getBounds(),wide=bb.pad?bb.pad(0.2):bb;let n=0;
+  GRID.layer.clearLayers();if(!map.hasLayer(GRID.layer))GRID.layer.addTo(map);
+  for(const c of napCells(zf)){
+    if(!wide.contains([(c.s+c.n)/2,(c.w+c.e)/2]))continue;
+    const vals=[];for(const i of c.idx){const r=NAP.rows[i];if(napCls(r)!=="oud")vals.push(r[NI.recent]);}
+    n+=c.idx.length;
+    const med=vals.length?median(vals):null,k=med==null?"oud":med>=S.red?"rood":med>=S.yellow?"geel":"groen";
+    const rc=L.rectangle([[c.s,c.w],[c.n,c.e]],{renderer:GRID.rend,stroke:false,fillColor:COL[k],fillOpacity:k==="oud"?.22:.5});
+    rc.on("click",e=>{L.DomEvent.stopPropagation(e);map.setView([(c.s+c.n)/2,(c.w+c.e)/2],NAP.MINZ);});
+    rc._zkCell={n:c.idx.length,med:med,k:k};
+    GRID.layer.addLayer(rc);
+  }
+  cnt.textContent=n.toLocaleString("nl-NL");
+  napNote("Vakjes: mediaan van de peilmerken per vak. Klik op een vak of zoom in voor losse peilmerken.");
+}
+function napOpen(i){
+  const r=NAP.rows[i],c=napCls(r),y=v=>v==null?"":Math.floor(v);
+  if(!NAP.cur||NAP.cur.i!==i)TEL.tel("punt");
+  const age=r[NI.lastY]!=null?Math.max(0,Math.round(M.nowYear-r[NI.lastY])):null;
+  const s=NAP.ser?NAP.ser[i]:null;
+  const ch=s?chartSeries(s,r[NI.rfrom],c):NAP.serState==="fout"?'<p class="mnote">Grafiek kon niet worden geladen.</p>':r[NI.n]>1?'<p class="mnote">Grafiek wordt geladen …</p>':"";
+  const lbl=c==="oud"?(r[NI.sprong]?"Onzekere meetreeks":"Geen recente of te korte meetreeks"):label(c)[0];
+  const html='<div class="pop"><div class="ttl">NAP-peilmerk '+esc(r[NI.p])+'</div>'+
+    '<div class="sub">'+esc(r[NI.oms]||"")+'</div>'+
+    '<div class="pill"><i style="background:#fff;box-shadow:inset 0 0 0 2.5px '+COL[c]+'"></i>'+esc(lbl)+'</div>'+
+    '<table class="kv">'+
+    '<tr><th>Recent</th><td>'+(r[NI.recent]==null?"te korte meetreeks":nf(r[NI.recent])+" mm/jaar <span class=m>"+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>")+'</td></tr>'+
+    '<tr><th>Hele reeks</th><td>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar <span class=m>"+esc((r[NI.first]||"").slice(0,4))+"–"+esc((r[NI.last]||"").slice(0,4))+"</span>")+'</td></tr>'+
+    '<tr><th>Metingen</th><td>'+r[NI.n]+(r[NI.last]?" · laatste "+fmtDate(r[NI.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
+    '</table>'+(r[NI.sprong]?'<p class="mnote">De reeks bevat een onverklaarde sprong (mogelijk een herberekening of meetfout); daarom grijs.</p>':"")+ch+
+    '<p class="mnote">Een peilmerk meet de hoogte t.o.v. NAP, inclusief bodemdaling van de omgeving. Rijkswaterstaat meet het eens per 5–15 jaar.</p>'+
+    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat (NAP), CC0</div></div>';
+  const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([r[NI.lat],r[NI.lon]]).setContent(html).openOn(map);
+  NAP.cur={i:i,p:p};
+  if(!NAP.ser)napLoadSer();
+}
+function napFind(q){
+  const go=()=>{const k=NAP.rows.findIndex(r=>String(r[NI.p]).toUpperCase()===q.toUpperCase());
+    if(k<0){say("Peilmerk “"+q+"” niet gevonden.");return;}
+    map.setView([NAP.rows[k][NI.lat],NAP.rows[k][NI.lon]],17);setTimeout(()=>{napRefresh(true);napOpen(k);},300);};
+  if(!S.showNap){S.showNap=true;save();}
+  if(NAP.rows)go();else{napRefresh(true);const t=setInterval(()=>{if(NAP.rows){clearInterval(t);go();}else if(NAP.state==="fout")clearInterval(t);},150);}
+}
 
 buildRows();fillSettings();styleAll();
 
