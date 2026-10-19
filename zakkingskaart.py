@@ -764,96 +764,189 @@ def write_csv(path, rows, args, now_y):
 # NAP-peilmerken (Rijkswaterstaat)
 # --------------------------------------------------------------------------
 
-def arcgis_query_all(url, params, delay, max_pages=0, label=""):
-    """Haalt alle records op uit een ArcGIS REST-query, in pagina's van NAP_PAGINA."""
-    out, offset, pages = [], 0, 0
+class NapOnderbroken(RuntimeError):
+    """Ophalen bij Rijkswaterstaat gestopt; wat binnen is, staat in de voortgangsbestand."""
+
+
+def arcgis_query_all(url, params, delay, max_pages=0, label="", after=0, on_page=None, geduld=(), deadline=None):
+    """Haalt records op uit een ArcGIS REST-query, in pagina's van NAP_PAGINA. Bladert op objectid
+    (where objectid > laatste) in plaats van met een steeds grotere offset: dat is lichter voor
+    de server. Na elke pagina wordt on_page(features, laatste_objectid) aangeroepen. Weigert de
+    server een tijd lang, dan wordt telkens langer gewacht (geduld, in seconden)."""
+    where0 = params.get("where") or "1=1"
+    fields = params.get("outFields", "*")
+    if fields != "*" and "objectid" not in fields.split(","):
+        fields += ",objectid"
+    total, pages = 0, 0
     while True:
+        if deadline and time.time() > deadline:
+            raise NapOnderbroken("tijdslimiet bereikt")
         q = dict(params)
-        q.update({"f": "json", "resultOffset": str(offset), "resultRecordCount": str(NAP_PAGINA)})
-        data = http_get_json(url + "/query?" + urllib.parse.urlencode(q), retries=4)
+        q.update({"where": f"({where0}) AND objectid > {int(after)}", "outFields": fields,
+                  "orderByFields": "objectid", "f": "json", "resultOffset": "0",
+                  "resultRecordCount": str(NAP_PAGINA)})
+        full = url + "/query?" + urllib.parse.urlencode(q)
+        data, fout = None, None
+        for wacht in (0,) + tuple(geduld):
+            if wacht:
+                if deadline and time.time() + wacht > deadline:
+                    break
+                log(f"   Rijkswaterstaat weigert even; {wacht / 60:.0f} min wachten en dan verder")
+                time.sleep(wacht)
+            try:
+                data = http_get_json(full, retries=4)
+                break
+            except RuntimeError as e:
+                fout = e
+        if data is None:
+            raise NapOnderbroken(str(fout or "tijdslimiet bereikt"))
         if isinstance(data, dict) and data.get("error"):
             err = data["error"]
             raise RuntimeError(f"ArcGIS-fout {err.get('code')}: {err.get('message')}")
         feats = (data or {}).get("features") or []
-        out.extend(feats)
+        if feats:
+            ids = [(f.get("attributes") or {}).get("objectid") for f in feats]
+            if any(not isinstance(i, int) for i in ids):
+                raise RuntimeError("ArcGIS-antwoord zonder objectid")
+            after = max(ids)
+        total += len(feats)
         pages += 1
+        if on_page:
+            on_page(feats, after)
         if pages % 25 == 0 or not feats:
-            log(f"   {label}: {fmt_int(len(out))} records")
+            log(f"   {label}: {fmt_int(total)} records erbij")
         if not feats or (len(feats) < NAP_PAGINA and not data.get("exceededTransferLimit")):
-            break
-        offset += len(feats)
+            return
         if (max_pages and pages >= max_pages) or pages > 2000:
-            break
+            return
         if delay:
             time.sleep(delay)
-    return out
 
 
-def fetch_nap(args, max_pages):
+def nap_punt(f):
+    a = f.get("attributes") or {}
+    g = f.get("geometry") or {}
+    lat, lon = g.get("y"), g.get("x")
+    if lat is None or lon is None:
+        try:
+            lat, lon = rd_to_wgs84(float(a.get("x_rd")), float(a.get("y_rd")))
+        except (TypeError, ValueError):
+            return None
+    if not a.get("puntnummer"):
+        return None
+    return {"p": a["puntnummer"].strip(), "lat": round(lat, 6), "lon": round(lon, 6),
+            "s": (a.get("status") or "").strip(), "o": re.sub(r"\s+", " ", a.get("omschrijving") or "").strip()}
+
+
+def nap_meting(f):
+    a = f.get("attributes") or {}
+    if a.get("puntnummer") and a.get("projectdatum") is not None and a.get("hoogte") is not None:
+        return {"p": a["puntnummer"].strip(), "j": a.get("project_id") or "",
+                "d": a["projectdatum"], "h": a["hoogte"]}
+    return None
+
+
+def fetch_nap(args, max_pages, vg, bewaar):
+    """Haalt de puntlagen en de historietabel op. vg is de voortgang (per bron de laatste objectid
+    en of hij klaar is, plus de records tot nu toe); bewaar() schrijft die naar de cache, zodat
+    een volgende run verder kan waar deze stopte."""
     base = args.nap_service.rstrip("/")
-    punten = []
-    for laag in NAP_PUNTLAGEN:
-        feats = arcgis_query_all(base + "/" + str(laag), {
-            "where": "1=1", "outFields": "puntnummer,x_rd,y_rd,status,omschrijving",
-            "returnGeometry": "true", "outSR": "4326", "orderByFields": "objectid"},
-            args.pauze, max_pages, f"peilmerken (laag {laag})")
-        for f in feats:
-            a = f.get("attributes") or {}
-            g = f.get("geometry") or {}
-            lat, lon = g.get("y"), g.get("x")
-            if lat is None or lon is None:
-                try:
-                    lat, lon = rd_to_wgs84(float(a.get("x_rd")), float(a.get("y_rd")))
-                except (TypeError, ValueError):
-                    continue
-            if not a.get("puntnummer"):
-                continue
-            punten.append({"p": a["puntnummer"].strip(), "lat": round(lat, 6), "lon": round(lon, 6),
-                           "s": (a.get("status") or "").strip(), "o": re.sub(r"\s+", " ", a.get("omschrijving") or "").strip()})
-    hist = []
-    for f in arcgis_query_all(base + "/" + str(NAP_HISTORIE), {
-            "where": "1=1", "outFields": "puntnummer,project_id,projectdatum,hoogte",
-            "returnGeometry": "false", "orderByFields": "objectid"}, args.pauze, max_pages, "NAP-historie"):
-        a = f.get("attributes") or {}
-        if a.get("puntnummer") and a.get("projectdatum") is not None and a.get("hoogte") is not None:
-            hist.append({"p": a["puntnummer"].strip(), "j": a.get("project_id") or "",
-                         "d": a["projectdatum"], "h": a["hoogte"]})
-    return punten, hist
+    geduld = tuple(float(x) for x in str(args.nap_geduld).split(",") if x.strip())
+    deadline = time.time() + args.nap_max_minuten * 60 if args.nap_max_minuten else None
+    bronnen = [(str(l), {"where": "1=1", "outFields": "puntnummer,x_rd,y_rd,status,omschrijving",
+                         "returnGeometry": "true", "outSR": "4326"}, "punten", nap_punt, f"peilmerken (laag {l})")
+               for l in NAP_PUNTLAGEN]
+    bronnen.append((str(NAP_HISTORIE), {"where": "1=1", "outFields": "puntnummer,project_id,projectdatum,hoogte",
+                                        "returnGeometry": "false"}, "hist", nap_meting, "NAP-historie"))
+    for key, params, doel, conv, label in bronnen:
+        b = vg["bronnen"].setdefault(key, {"na": 0, "klaar": False})
+        if b["klaar"]:
+            continue
+        if b["na"]:
+            log(f"   {label}: verder vanaf objectid {b['na']}")
+        teller = [0]
+
+        def on_page(feats, na, b=b, doel=doel, conv=conv):
+            for f in feats:
+                r = conv(f)
+                if r:
+                    vg[doel].append(r)
+            b["na"] = na
+            teller[0] += 1
+            if teller[0] % 25 == 0:
+                bewaar()
+
+        arcgis_query_all(base + "/" + key, params, args.nap_pauze, max_pages, label,
+                         after=b["na"], on_page=on_page, geduld=geduld, deadline=deadline)
+        b["klaar"] = True
+        bewaar()
+    return vg["punten"], vg["hist"]
 
 
 def update_nap(cache_dir, args, max_pages, state):
     """Peilmerken + historie, met eigen cache. Wordt eens per --nap-ververs dagen opnieuw
-    opgehaald (peilmerken worden maar eens per 5-15 jaar gemeten). Mislukt het ophalen,
-    dan wordt de oude cache gebruikt; zonder cache wordt de laag overgeslagen."""
+    opgehaald (peilmerken worden maar eens per 5-15 jaar gemeten). Lukt het ophalen niet in
+    één keer, dan wordt de voortgang bewaard en gaat de volgende run verder. Tot het compleet
+    is, wordt de oude cache gebruikt; zonder cache wordt de laag overgeslagen."""
     fp = os.path.join(cache_dir, "nap_punten.jsonl.gz")
     fh = os.path.join(cache_dir, "nap_historie.jsonl.gz")
+    fv = os.path.join(cache_dir, "nap_voortgang.json.gz")
     have = os.path.exists(fp) and os.path.exists(fh)
     age = days_since(state.get("napOpgehaald"))
     if have and not args.vernieuw and age is not None and age < args.nap_ververs:
         log(f"-> NAP-peilmerken: uit cache (opgehaald {state.get('napOpgehaald')})")
         return load_jsonl_gz(fp), load_jsonl_gz(fh)
-    log("-> NAP-peilmerken: ophalen bij Rijkswaterstaat")
+    vg = None
+    if os.path.exists(fv) and not args.vernieuw:
+        try:
+            with gzip.open(fv, "rt", encoding="utf-8") as fhd:
+                vg = json.load(fhd)
+            if vg.get("versie") != 1 or (days_since(vg.get("gestart")) or 0) > 60:
+                vg = None
+        except (OSError, ValueError):
+            vg = None
+    if vg:
+        log(f"-> NAP-peilmerken: verder met ophalen (begonnen {vg['gestart']}, "
+            f"{fmt_int(len(vg['punten']))} peilmerken en {fmt_int(len(vg['hist']))} metingen binnen)")
+    else:
+        log("-> NAP-peilmerken: ophalen bij Rijkswaterstaat")
+        vg = {"versie": 1, "gestart": date.today().isoformat(), "bronnen": {}, "punten": [], "hist": []}
+
+    def bewaar():
+        tmp = fv + ".tmp"
+        with gzip.open(tmp, "wt", encoding="utf-8") as fhd:
+            json.dump(vg, fhd, separators=(",", ":"))
+        os.replace(tmp, fv)
+
     try:
-        punten, hist = fetch_nap(args, max_pages)
+        punten, hist = fetch_nap(args, max_pages, vg, bewaar)
         prev = state.get("napAantallen") or {}
         if prev and not args.proef and (len(punten) < 0.9 * prev.get("punten", 0) or len(hist) < 0.9 * prev.get("metingen", 0)):
+            os.remove(fv)
             raise RuntimeError(f"veel minder data dan vorige keer ({len(punten)} punten, {len(hist)} metingen; "
                                f"was {prev.get('punten')}, {prev.get('metingen')})")
         if not punten or not hist:
+            os.remove(fv)
             raise RuntimeError("geen peilmerken of metingen ontvangen")
         write_jsonl_gz(fp, punten)
         write_jsonl_gz(fh, hist)
+        if os.path.exists(fv):
+            os.remove(fv)
         state["napOpgehaald"] = date.today().isoformat()
         state["napAantallen"] = {"punten": len(punten), "metingen": len(hist)}
         log(f"   klaar: {fmt_int(len(punten))} peilmerken, {fmt_int(len(hist))} metingen")
         return punten, hist
+    except NapOnderbroken as e:
+        bewaar()
+        log(f"   let op: NAP-peilmerken nog niet compleet ({e}). Binnen: {fmt_int(len(vg['punten']))} peilmerken, "
+            f"{fmt_int(len(vg['hist']))} metingen. De volgende run gaat hier verder.")
     except (RuntimeError, FatalHTTP) as e:
         log(f"   let op: NAP-peilmerken niet opgehaald ({e})")
-        if have:
-            log("   oude NAP-cache wordt gebruikt")
-            return load_jsonl_gz(fp), load_jsonl_gz(fh)
-        log("   de NAP-laag wordt deze keer overgeslagen")
-        return None
+    if have:
+        log("   oude NAP-cache wordt gebruikt")
+        return load_jsonl_gz(fp), load_jsonl_gz(fh)
+    log("   de NAP-laag wordt deze keer overgeslagen")
+    return None
 
 
 def nap_series(meas):
@@ -1067,6 +1160,12 @@ def main():
                     help="--site: geen laag met NAP-peilmerken van Rijkswaterstaat (heel Nederland)")
     ap.add_argument("--nap-ververs", type=int, default=365,
                     help="--site: NAP-peilmerken opnieuw ophalen als de cache zoveel dagen oud is (standaard 365)")
+    ap.add_argument("--nap-max-minuten", type=float, default=60,
+                    help="--site: hoogstens zoveel minuten per run besteden aan het ophalen van NAP-peilmerken; "
+                         "de volgende run gaat verder (standaard 60)")
+    ap.add_argument("--nap-pauze", type=float, default=1.0,
+                    help="--site: pauze tussen verzoeken aan Rijkswaterstaat in seconden (standaard 1)")
+    ap.add_argument("--nap-geduld", default="60,180,420", help=argparse.SUPPRESS)  # wachttijden bij weigering
     ap.add_argument("--api", default=API, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--nap-service", default=NAP_SERVICE, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--vernieuw", action="store_true", help="data opnieuw ophalen en de cache negeren")
