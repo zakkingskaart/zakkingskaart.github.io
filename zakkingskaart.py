@@ -953,9 +953,48 @@ def fetch_nap(args, max_pages, vg, bewaar):
     return vg["punten"], vg["hist"]
 
 
+def nap_vingerafdruk(args):
+    """Korte controle bij Rijkswaterstaat (een handvol verzoeken): aantallen records en de
+    nieuwste datums. Verandert dit, dan zijn er nieuwe of gewijzigde gegevens. None als het
+    niet lukt."""
+    base = args.nap_service.rstrip("/")
+    verb = NapVerbinding(base)
+
+    def q(laag, **extra):
+        params = {"where": "1=1", "returnGeometry": "false", "f": "json"}
+        params.update(extra)
+        data = verb.get_json(base + "/" + str(laag) + "/query?" + urllib.parse.urlencode(params), retries=3)
+        if not isinstance(data, dict) or data.get("error"):
+            raise RuntimeError(f"ArcGIS-fout: {(data or {}).get('error')}")
+        return data
+
+    def nieuwste(laag, veld):
+        feats = q(laag, outFields=veld, orderByFields=veld + " DESC", resultOffset="0",
+                  resultRecordCount="1").get("features") or []
+        return (feats[0].get("attributes") or {}).get(veld) if feats else None
+
+    try:
+        va = {}
+        for laag in NAP_PUNTLAGEN:
+            va[f"laag{laag}"] = q(laag, returnCountOnly="true").get("count")
+            va[f"laag{laag}Mutatie"] = nieuwste(laag, "datum_mutatie")
+        va["metingen"] = q(NAP_HISTORIE, returnCountOnly="true").get("count")
+        va["nieuwsteMeting"] = nieuwste(NAP_HISTORIE, "projectdatum")
+        if va["metingen"] is None:
+            raise RuntimeError("geen aantal ontvangen")
+        return va
+    except (RuntimeError, FatalHTTP) as e:
+        log(f"   controle bij Rijkswaterstaat lukte niet ({e})")
+        return None
+    finally:
+        verb.sluit()
+
+
 def update_nap(cache_dir, args, max_pages, state):
-    """Peilmerken + historie, met eigen cache. Wordt eens per --nap-ververs dagen opnieuw
-    opgehaald (peilmerken worden maar eens per 5-15 jaar gemeten). Lukt het ophalen niet in
+    """Peilmerken + historie, met eigen cache. Om de --nap-controle dagen (21) wordt kort
+    gecontroleerd of Rijkswaterstaat nieuwe of gewijzigde gegevens heeft (aantallen en nieuwste
+    datums); zo ja, of als de cache ouder is dan --nap-ververs dagen (91), wordt alles opnieuw
+    opgehaald. Peilmerken worden maar eens per 5-15 jaar gemeten. Lukt het ophalen niet in
     één keer, dan wordt de voortgang bewaard en gaat de volgende run verder. Tot het compleet
     is, wordt de oude cache gebruikt; zonder cache wordt de laag overgeslagen."""
     fp = os.path.join(cache_dir, "nap_punten.jsonl.gz")
@@ -963,9 +1002,28 @@ def update_nap(cache_dir, args, max_pages, state):
     fv = os.path.join(cache_dir, "nap_voortgang.json.gz")
     have = os.path.exists(fp) and os.path.exists(fh)
     age = days_since(state.get("napOpgehaald"))
-    if have and not args.vernieuw and age is not None and age < args.nap_ververs:
-        log(f"-> NAP-peilmerken: uit cache (opgehaald {state.get('napOpgehaald')})")
-        return load_jsonl_gz(fp), load_jsonl_gz(fh)
+    bezig = os.path.exists(fv) and not args.vernieuw
+    if have and not bezig and not args.vernieuw and age is not None and age < args.nap_ververs:
+        laatste = state.get("napControle") or state.get("napOpgehaald")
+        ctrl_age = days_since(laatste)
+        if args.nap_controle and (ctrl_age is None or ctrl_age >= args.nap_controle or not state.get("napVingerafdruk")):
+            log(f"-> NAP-peilmerken: korte controle bij Rijkswaterstaat (vorige: {laatste})")
+            va = nap_vingerafdruk(args)
+            if va is not None:
+                state["napControle"] = date.today().isoformat()
+                oud = state.get("napVingerafdruk")
+                if not oud:
+                    state["napVingerafdruk"] = va
+                    log("   uitgangspunt vastgelegd; vanaf nu worden wijzigingen opgemerkt")
+                elif va != oud:
+                    verschil = ", ".join(f"{k}: {oud.get(k)} -> {va.get(k)}" for k in sorted(va) if va.get(k) != oud.get(k))
+                    log(f"   nieuwe of gewijzigde gegevens ({verschil}); alles wordt opnieuw opgehaald")
+                    age = None
+                else:
+                    log("   geen wijzigingen")
+        if age is not None:
+            log(f"-> NAP-peilmerken: uit cache (opgehaald {state.get('napOpgehaald')})")
+            return load_jsonl_gz(fp), load_jsonl_gz(fh)
     vg = None
     if os.path.exists(fv) and not args.vernieuw:
         try:
@@ -980,7 +1038,8 @@ def update_nap(cache_dir, args, max_pages, state):
             f"{fmt_int(len(vg['punten']))} peilmerken en {fmt_int(len(vg['hist']))} metingen binnen)")
     else:
         log("-> NAP-peilmerken: ophalen bij Rijkswaterstaat")
-        vg = {"versie": 1, "gestart": date.today().isoformat(), "bronnen": {}, "punten": [], "hist": []}
+        vg = {"versie": 1, "gestart": date.today().isoformat(), "bronnen": {}, "punten": [], "hist": [],
+              "vingerafdruk": nap_vingerafdruk(args) if args.nap_controle else None}
 
     def bewaar():
         tmp = fv + ".tmp"
@@ -1004,6 +1063,11 @@ def update_nap(cache_dir, args, max_pages, state):
             os.remove(fv)
         state["napOpgehaald"] = date.today().isoformat()
         state["napAantallen"] = {"punten": len(punten), "metingen": len(hist)}
+        state["napControle"] = date.today().isoformat()
+        if vg.get("vingerafdruk"):
+            state["napVingerafdruk"] = vg["vingerafdruk"]
+        else:
+            state.pop("napVingerafdruk", None)   # volgende run legt het uitgangspunt vast
         log(f"   klaar: {fmt_int(len(punten))} peilmerken, {fmt_int(len(hist))} metingen")
         return punten, hist
     except NapOnderbroken as e:
@@ -1229,8 +1293,12 @@ def main():
                          "ook via ZK_GOOGLE_VERIFICATIE")
     ap.add_argument("--zonder-nap", action="store_true",
                     help="--site: geen laag met NAP-peilmerken van Rijkswaterstaat (heel Nederland)")
-    ap.add_argument("--nap-ververs", type=int, default=365,
-                    help="--site: NAP-peilmerken opnieuw ophalen als de cache zoveel dagen oud is (standaard 365)")
+    ap.add_argument("--nap-ververs", type=int, default=91,
+                    help="--site: NAP-peilmerken hoe dan ook opnieuw ophalen als de cache zoveel dagen oud is "
+                         "(standaard 91, eens per kwartaal)")
+    ap.add_argument("--nap-controle", type=int, default=21,
+                    help="--site: om de zoveel dagen kort bij Rijkswaterstaat controleren of er nieuwe gegevens zijn; "
+                         "zo ja, dan wordt alles opnieuw opgehaald (standaard 21; 0 = niet controleren)")
     ap.add_argument("--nap-max-minuten", type=float, default=60,
                     help="--site: hoogstens zoveel minuten per run besteden aan het ophalen van NAP-peilmerken; "
                          "de volgende run gaat verder (standaard 60)")
