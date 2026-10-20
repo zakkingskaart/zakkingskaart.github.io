@@ -1817,11 +1817,12 @@ m.addEventListener("click",function(e){if(e.target===m)close();});
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!m.hidden)close();});
 if(location.hash==="#over")open();
 window.addEventListener("hashchange",function(){if(location.hash==="#over"&&m.hidden)open();});
-// Eenmalig: "Goed om te weten". Eén keer per browser; daarna onthouden (geen cookie).
-var IK="zakkingskaart.intro",iv="2",it=document.getElementById("intro"),gezien=false;
-try{gezien=localStorage.getItem(IK)===iv;}catch(e){}
+// Akkoord bij het openen: geldig voor 30 dagen in deze browser (localStorage, geen cookie).
+// Verhoog iv als de tekst inhoudelijk verandert; dan ziet iedereen hem opnieuw.
+var IK="zakkingskaart.intro",iv="2",GELDIG=30*864e5,it=document.getElementById("intro"),gezien=false;
+try{var a=JSON.parse(localStorage.getItem(IK)||"null");gezien=!!a&&a.v===iv&&typeof a.t==="number"&&Date.now()-a.t>=0&&Date.now()-a.t<GELDIG;}catch(e){}
 if(!gezien&&location.hash!=="#over"){it.hidden=false;setTimeout(function(){var b=document.getElementById("iOk");if(b)b.focus();},0);}
-document.getElementById("iOk").addEventListener("click",function(){it.hidden=true;try{localStorage.setItem(IK,iv);}catch(e){}});
+document.getElementById("iOk").addEventListener("click",function(){it.hidden=true;try{localStorage.setItem(IK,JSON.stringify({v:iv,t:Date.now()}));}catch(e){}});
 })();
 </script>
 <script>
