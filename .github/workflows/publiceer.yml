@@ -3,6 +3,7 @@ name: Kaart bijwerken en publiceren
 on:
   schedule:
     - cron: "17 4 * * 1"   # elke maandag rond 04:17 UTC
+    - cron: "41 5 * * *"   # dagelijks, maar doet alleen iets als het ophalen van NAP-peilmerken nog niet af is
   workflow_dispatch:         # handmatig starten via het tabblad Actions
     inputs:
       vernieuw:
@@ -26,7 +27,9 @@ concurrency:
 jobs:
   bouwen:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
+    outputs:
+      doen: ${{ steps.nodig.outputs.doen }}
     permissions:
       contents: write   # om de cache op de branch data-cache te bewaren
     steps:
@@ -43,7 +46,20 @@ jobs:
             echo "Nog geen cache; eerste run haalt alles op (10-30 minuten)."
           fi
 
+      - name: Is deze run nodig?
+        id: nodig
+        env:
+          SCHEMA: ${{ github.event.schedule }}
+        run: |
+          if [ "$SCHEMA" = "41 5 * * *" ] && [ ! -f cache/nap_voortgang.json.gz ]; then
+            echo "Dagelijkse run: de NAP-peilmerken zijn compleet, er is niets te doen."
+            echo "doen=nee" >> "$GITHUB_OUTPUT"
+          else
+            echo "doen=ja" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Kaart maken
+        if: steps.nodig.outputs.doen == 'ja'
         env:
           ZK_FEEDBACK_URL: ${{ secrets.ZK_FEEDBACK_URL }}
           ZK_SITE_URL: ${{ vars.ZK_SITE_URL }}                       # leeg = https://zakkingskaart.github.io/
@@ -51,13 +67,13 @@ jobs:
           VERNIEUW: ${{ inputs.vernieuw }}
           FORCEER: ${{ inputs.forceer }}
         run: |
-          ARGS="--site --cache cache --uitvoer site"
+          ARGS="--site --cache cache --uitvoer site --nap-max-minuten 100"
           if [ "$VERNIEUW" = "true" ]; then ARGS="$ARGS --vernieuw"; fi
           if [ "$FORCEER" = "true" ]; then ARGS="$ARGS --forceer"; fi
           python3 zakkingskaart.py $ARGS
 
       - name: Cache bewaren (branch data-cache)
-        if: always()
+        if: always() && steps.nodig.outputs.doen == 'ja'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -73,12 +89,15 @@ jobs:
           du -sh --exclude=.git .
 
       - uses: actions/configure-pages@v5
+        if: steps.nodig.outputs.doen == 'ja'
       - uses: actions/upload-pages-artifact@v5
+        if: steps.nodig.outputs.doen == 'ja'
         with:
           path: site
 
   publiceren:
     needs: bouwen
+    if: needs.bouwen.outputs.doen == 'ja'
     runs-on: ubuntu-latest
     permissions:
       pages: write
