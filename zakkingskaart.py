@@ -42,6 +42,7 @@ import base64
 import csv
 import gzip
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -764,11 +765,75 @@ def write_csv(path, rows, args, now_y):
 # NAP-peilmerken (Rijkswaterstaat)
 # --------------------------------------------------------------------------
 
+NAP_TIMEOUT = 45   # seconden; een pagina duurt normaal een paar seconden
+
+
+class NapVerbinding:
+    """Eén blijvende verbinding (keep-alive) voor alle verzoeken aan Rijkswaterstaat. Hun
+    beveiliging remt adressen af die veel nieuwe verbindingen openen; met één verbinding
+    voor honderden pagina's blijft dat onder de radar."""
+
+    def __init__(self, base):
+        u = urllib.parse.urlsplit(base)
+        self.https = u.scheme == "https"
+        self.host = u.netloc
+        self.conn = None
+        self.nieuw = 0          # aantal geopende verbindingen (voor het log)
+
+    def sluit(self):
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+        self.conn = None
+
+    def get_json(self, url, retries=4):
+        u = urllib.parse.urlsplit(url)
+        path = u.path + ("?" + u.query if u.query else "")
+        delay, last_err = 2.0, None
+        for attempt in range(1, retries + 1):
+            try:
+                if self.conn is None:
+                    if self.https:
+                        self.conn = http.client.HTTPSConnection(self.host, timeout=NAP_TIMEOUT,
+                                                                context=ssl.create_default_context())
+                    else:
+                        self.conn = http.client.HTTPConnection(self.host, timeout=NAP_TIMEOUT)
+                    self.nieuw += 1
+                self.conn.request("GET", path, headers={"User-Agent": USER_AGENT, "Accept": "application/json",
+                                                        "Connection": "keep-alive"})
+                r = self.conn.getresponse()
+                body = r.read()
+                if r.will_close:
+                    self.sluit()
+                if r.status in (429, 500, 502, 503, 504):
+                    ra = r.getheader("Retry-After") or ""
+                    wait = float(ra) if ra.replace(".", "", 1).isdigit() else delay
+                    log(f"   server antwoordt {r.status}, opnieuw over {wait:.0f} s (poging {attempt}/{retries})")
+                    last_err = f"HTTP {r.status}"
+                    time.sleep(wait)
+                    delay = min(delay * 2, 90)
+                    continue
+                if r.status >= 400:
+                    raise FatalHTTP(r.status, url, body[:500].decode("utf-8", "replace"))
+                return json.loads(body.decode("utf-8"))
+            except (OSError, http.client.HTTPException, ValueError) as e:
+                self.sluit()
+                last_err = e
+                log(f"   verbindingsprobleem ({e.__class__.__name__}: {e}), opnieuw over {delay:.0f} s "
+                    f"(poging {attempt}/{retries})")
+                time.sleep(delay)
+                delay = min(delay * 2, 90)
+        raise RuntimeError(f"Ophalen mislukt na {retries} pogingen: {url} ({last_err})")
+
+
 class NapOnderbroken(RuntimeError):
     """Ophalen bij Rijkswaterstaat gestopt; wat binnen is, staat in de voortgangsbestand."""
 
 
-def arcgis_query_all(url, params, delay, max_pages=0, label="", after=0, on_page=None, geduld=(), deadline=None):
+def arcgis_query_all(url, params, delay, max_pages=0, label="", after=0, on_page=None, geduld=(), deadline=None,
+                     get=None):
     """Haalt records op uit een ArcGIS REST-query, in pagina's van NAP_PAGINA. Bladert op objectid
     (where objectid > laatste) in plaats van met een steeds grotere offset: dat is lichter voor
     de server. Na elke pagina wordt on_page(features, laatste_objectid) aangeroepen. Weigert de
@@ -777,7 +842,8 @@ def arcgis_query_all(url, params, delay, max_pages=0, label="", after=0, on_page
     fields = params.get("outFields", "*")
     if fields != "*" and "objectid" not in fields.split(","):
         fields += ",objectid"
-    total, pages = 0, 0
+    get = get or (lambda u: http_get_json(u, retries=4))
+    total, pages, t0 = 0, 0, time.time()
     while True:
         if deadline and time.time() > deadline:
             raise NapOnderbroken("tijdslimiet bereikt")
@@ -794,7 +860,7 @@ def arcgis_query_all(url, params, delay, max_pages=0, label="", after=0, on_page
                 log(f"   Rijkswaterstaat weigert even; {wacht / 60:.0f} min wachten en dan verder")
                 time.sleep(wacht)
             try:
-                data = http_get_json(full, retries=4)
+                data = get(full)
                 break
             except RuntimeError as e:
                 fout = e
@@ -814,7 +880,7 @@ def arcgis_query_all(url, params, delay, max_pages=0, label="", after=0, on_page
         if on_page:
             on_page(feats, after)
         if pages % 25 == 0 or not feats:
-            log(f"   {label}: {fmt_int(total)} records erbij")
+            log(f"   {label}: {fmt_int(total)} records erbij ({(time.time() - t0) / 60:.0f} min)")
         if not feats or (len(feats) < NAP_PAGINA and not data.get("exceededTransferLimit")):
             return
         if (max_pages and pages >= max_pages) or pages > 2000:
@@ -853,6 +919,7 @@ def fetch_nap(args, max_pages, vg, bewaar):
     base = args.nap_service.rstrip("/")
     geduld = tuple(float(x) for x in str(args.nap_geduld).split(",") if x.strip())
     deadline = time.time() + args.nap_max_minuten * 60 if args.nap_max_minuten else None
+    verb = NapVerbinding(base)
     bronnen = [(str(l), {"where": "1=1", "outFields": "puntnummer,x_rd,y_rd,status,omschrijving",
                          "returnGeometry": "true", "outSR": "4326"}, "punten", nap_punt, f"peilmerken (laag {l})")
                for l in NAP_PUNTLAGEN]
@@ -877,9 +944,12 @@ def fetch_nap(args, max_pages, vg, bewaar):
                 bewaar()
 
         arcgis_query_all(base + "/" + key, params, args.nap_pauze, max_pages, label,
-                         after=b["na"], on_page=on_page, geduld=geduld, deadline=deadline)
+                         after=b["na"], on_page=on_page, geduld=geduld, deadline=deadline,
+                         get=lambda u: verb.get_json(u, retries=3))
         b["klaar"] = True
         bewaar()
+        log(f"   {label}: compleet (verbindingen geopend tot nu toe: {verb.nieuw})")
+    verb.sluit()
     return vg["punten"], vg["hist"]
 
 
@@ -1165,7 +1235,7 @@ def main():
                          "de volgende run gaat verder (standaard 60)")
     ap.add_argument("--nap-pauze", type=float, default=1.0,
                     help="--site: pauze tussen verzoeken aan Rijkswaterstaat in seconden (standaard 1)")
-    ap.add_argument("--nap-geduld", default="60,180,420", help=argparse.SUPPRESS)  # wachttijden bij weigering
+    ap.add_argument("--nap-geduld", default="120,300,600,900", help=argparse.SUPPRESS)  # wachttijden bij weigering
     ap.add_argument("--api", default=API, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--nap-service", default=NAP_SERVICE, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--vernieuw", action="store_true", help="data opnieuw ophalen en de cache negeren")
