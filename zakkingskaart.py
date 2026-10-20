@@ -1143,6 +1143,7 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None):
         write_text(os.path.join(out_dir, "nap.json"), nd)
         meta["napUrl"] = "nap.json?v=" + short_hash(nd)
         meta["napCount"] = len(nap_rows)
+        meta["napService"] = args.nap_service.rstrip("/")
     core = [b[:17] + [None] for b in Bdata]
     if not args.zonder_grafieken:
         reeksen = json.dumps([b[17] for b in Bdata], ensure_ascii=False, separators=(",", ":"))
@@ -1579,6 +1580,7 @@ table.mt th{position:sticky;top:0;background:#f6f5f1;text-align:left;font-weight
 table.mt td{padding:6px 9px;border-bottom:1px solid #f0eee8;white-space:nowrap}
 table.mt td.n,table.mt th.n{text-align:right}
 table.mt tr.rec td{background:#fbf6e6}
+table.mt tr.oud td{color:#9a978f}
 .mnote{color:var(--muted);font-size:12px;margin:6px 0 0}
 .msum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 10px}
 .msum b{font-variant-numeric:tabular-nums}
@@ -1628,7 +1630,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <h3>Disclaimer</h3>
     <p>De kleuren zijn een berekende indicatie op basis van metingen aan gevels. Ze zijn geen oordeel over de fundering, de staat of de waarde van een pand, en kunnen onvolledig of verouderd zijn. Aan deze kaart kunnen geen rechten worden ontleend. Neem je een beslissing over een pand, laat dan een funderingsonderzoek doen door een deskundige en raadpleeg de officiële gegevens van de gemeente en Rijkswaterstaat.</p>
     <h3>Privacy</h3>
-    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
+    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
     <h3>Bronnen</h3>
     <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. NAP-peilmerken: Rijkswaterstaat (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
   </div></div>
@@ -2181,10 +2183,75 @@ function napOpen(i){
     '<tr><th>Metingen</th><td>'+r[NI.n]+(r[NI.last]?" · laatste "+fmtDate(r[NI.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
     '</table>'+(r[NI.sprong]?'<p class="mnote">De reeks bevat een onverklaarde sprong (mogelijk een herberekening of meetfout); daarom grijs.</p>':"")+ch+
     '<p class="mnote">Een peilmerk meet de hoogte t.o.v. NAP, inclusief bodemdaling van de omgeving. Rijkswaterstaat meet het eens per 5–15 jaar.</p>'+
+    (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">Alle meetgegevens bekijken</a>':"")+
     '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat (NAP), CC0</div></div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([r[NI.lat],r[NI.lon]]).setContent(html).openOn(map);
   NAP.cur={i:i,p:p};
+  const el=p.getElement&&p.getElement();
+  if(el){const a=el.querySelector("a[data-nmeas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();napMeas(i);});}
   if(!NAP.ser)napLoadSer();
+}
+function napQueryUrl(p,fmt){
+  return M.napService+"/4/query?"+new URLSearchParams({where:"puntnummer='"+String(p).replace(/'/g,"''")+"'",
+    outFields:"puntnummer,project_id,project_titel,projectdatum,hoogte,orde",orderByFields:"projectdatum",returnGeometry:"false",f:fmt}).toString();
+}
+function napSummary(r){
+  const c=napCls(r),y=v=>v==null?"":Math.floor(v);
+  const lbl=c==="oud"?(r[NI.sprong]?"Onzekere meetreeks":"Geen recente of te korte meetreeks"):label(c)[0];
+  return '<div class="msum">'+
+    '<span>Recent: <b>'+(r[NI.recent]==null?"–":nf(r[NI.recent])+" mm/jaar")+'</b> '+(r[NI.rfrom]!=null?'<span class="m">'+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>":"")+'</span>'+
+    '<span>Hele reeks: <b>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar")+'</b></span>'+
+    '<span>Klasse: <b>'+esc(lbl)+'</b></span></div>';
+}
+function napRawSection(link,err){
+  const a='<a href="'+esc(link)+'" target="_blank" rel="noopener">Open bij Rijkswaterstaat ↗</a>';
+  if(err)return '<h3>Ruwe gegevens van Rijkswaterstaat</h3><p class="mnote">Kon de ruwe gegevens niet rechtstreeks ophalen ('+esc(err)+'). '+a+'</p>';
+  return '<h3>Ruwe gegevens van Rijkswaterstaat</h3><p class="mnote" style="margin:0 0 6px">Precies zoals Rijkswaterstaat ze levert (JSON). '+a+'</p><pre class="rawjson" id="rawjson"></pre>';
+}
+function napMeas(i){
+  TEL.tel("meet");
+  const r=NAP.rows[i];lastFocus=document.activeElement;
+  mTitle.textContent="NAP-peilmerk "+r[NI.p];
+  mSub.textContent=[r[NI.oms],r[NI.status]].filter(Boolean).join(" · ");
+  mBody.innerHTML='<p class="mnote">Meetgegevens ophalen bij Rijkswaterstaat …</p>';
+  modal.hidden=false;document.getElementById("mClose").focus();
+  const url=napQueryUrl(r[NI.p],"json"),link=napQueryUrl(r[NI.p],"html"),rf=r[NI.rfrom];
+  fetch(url).then(x=>{if(!x.ok)throw new Error("HTTP "+x.status);return x.json();})
+  .then(data=>{
+    if(modal.hidden)return;
+    if(data&&data.error)throw new Error(data.error.message||"fout bij Rijkswaterstaat");
+    const items=((data&&data.features)||[]).map(f=>f.attributes||{}).filter(a=>a.projectdatum!=null)
+      .sort((a,b)=>a.projectdatum-b.projectdatum||String(a.project_id).localeCompare(String(b.project_id)));
+    const herz=items.some(a=>String(a.project_id||"").indexOf("=")>=0);
+    let h0=null,prev=null,nUsed=0;
+    const rows=items.map(a=>{
+      const iso=new Date(a.projectdatum+432e5).toISOString().slice(0,10),t=yearFracOf(iso);
+      const u=!herz||String(a.project_id||"").indexOf("=")>=0;
+      let dz="–",tot="–";
+      if(u&&a.hoogte!=null){nUsed++;if(h0==null)h0=a.hoogte;tot=nf((h0-a.hoogte)*1000,1);if(prev!=null)dz=nf((prev-a.hoogte)*1000,1);prev=a.hoogte;}
+      const cls=!u?"oud":(rf!=null&&t!=null&&t>=rf-0.006?"rec":"");
+      return '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+fmtDate(iso)+'</td><td class="n">'+(a.hoogte==null?"–":nf(a.hoogte,4))+
+        '</td><td class="n">'+dz+'</td><td class="n">'+tot+'</td><td>'+esc(a.project_id||"–")+'</td><td>'+esc(a.project_titel||"–")+
+        '</td><td class="n">'+(a.orde==null?"–":esc(a.orde))+'</td><td>'+(u?"ja":"nee")+'</td></tr>';}).join("");
+    mBody.innerHTML=napSummary(r)+
+      '<div class="mt-wrap"><table class="mt"><thead><tr><th>Datum</th><th class="n">Hoogte t.o.v. NAP (m)</th><th class="n">Zakking sinds vorige (mm)</th><th class="n">Totaal gezakt (mm)</th><th>Project</th><th>Projecttitel</th><th class="n">Orde</th><th>Gebruikt</th></tr></thead><tbody>'+
+      (rows||'<tr><td colspan="8">Geen metingen gevonden.</td></tr>')+'</tbody></table></div>'+
+      '<p class="mnote">'+items.length+' metingen'+(items.length!==nUsed?', waarvan '+nUsed+' gebruikt in de berekening':'')+'. Geel gemarkeerd: de periode waarover de recente snelheid is berekend.'+
+      (herz&&items.length!==nUsed?' Grijs: oude waarden uit vóór de herziening van het NAP-stelsel. Rijkswaterstaat heeft die metingen later herrekend; de kaart gebruikt alleen de herrekende waarden (project met &ldquo;=&rdquo;), anders ontstaan schijnbare sprongen van centimeters.':'')+
+      ' Zakking is positief als het punt lager is komen te liggen. Metingen binnen één jaar tellen in de berekening als één meetcampagne.</p>'+
+      napRawSection(link,null);
+    const pre=document.getElementById("rawjson");if(pre)pre.textContent=JSON.stringify(data,null,2);
+  })
+  .catch(err=>{
+    if(modal.hidden)return;
+    const s=NAP.ser?NAP.ser[i]:null,rows=[];
+    for(let k=0;s&&k<s.length;k+=2){const t=s[k]+1900,y=Math.floor(t),d=new Date(Date.UTC(y,0,1)+(t-y)*365.25*864e5);
+      rows.push('<tr><td>± '+d.toLocaleDateString("nl-NL",{month:"short",year:"numeric",timeZone:"UTC"})+'</td><td class="n">'+nf(s[k+1],1)+'</td></tr>');}
+    mBody.innerHTML='<div class="warn">De actuele gegevens konden niet bij Rijkswaterstaat worden opgehaald. Hieronder de meetreeks zoals die bij het maken van deze kaart is opgeslagen (per meetcampagne, datum bij benadering).</div>'+
+      napSummary(r)+
+      '<div class="mt-wrap"><table class="mt"><thead><tr><th>Datum</th><th class="n">Totaal gezakt (mm)</th></tr></thead><tbody>'+(rows.join("")||'<tr><td colspan="2">Geen meetreeks opgeslagen.</td></tr>')+'</tbody></table></div>'+
+      napRawSection(link,String(err&&err.message||err));
+  });
 }
 function napFind(q){
   const go=()=>{const k=NAP.rows.findIndex(r=>String(r[NI.p]).toUpperCase()===q.toUpperCase());
