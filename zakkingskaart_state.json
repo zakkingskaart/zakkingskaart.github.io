@@ -1,0 +1,30 @@
+{
+  "metingenVolledig": "2026-10-18",
+  "laatsteUpdate": {
+    "soort": "incrementeel",
+    "vanaf": "2024-10-19",
+    "opgehaald": 942,
+    "nieuw": 0,
+    "gewijzigd": 0,
+    "metingen": 71974
+  },
+  "vorigePublicatie": {
+    "datum": "2026-10-20",
+    "meetbouten": 12941,
+    "metingen": 71974
+  },
+  "napOpgehaald": "2026-10-20",
+  "napAantallen": {
+    "punten": 53833,
+    "metingen": 502207
+  },
+  "napControle": "2026-10-20",
+  "napVingerafdruk": {
+    "laag0": 33871,
+    "laag0Mutatie": null,
+    "laag1": 22243,
+    "laag1Mutatie": null,
+    "metingen": 502207,
+    "nieuwsteMeting": 1782950400000
+  }
+}

@@ -1,0 +1,5 @@
+*.part.jsonl
+*.tmp
+*.state.json
+*.nieuw.*
+*.delta.*
