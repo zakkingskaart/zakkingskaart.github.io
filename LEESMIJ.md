@@ -131,6 +131,13 @@ In website-modus haalt het script ook de NAP-peilmerken van Rijkswaterstaat op: 
 - **Rustig ophalen:** de beveiliging van Rijkswaterstaat remt adressen af die veel nieuwe verbindingen openen (je ziet dan `timed out` of `Connection refused`). Het script doet daarom alle verzoeken via één blijvende verbinding, wacht 1 seconde tussen verzoeken (`--nap-pauze`) en bladert op objectid. Hangt het toch, dan wacht het 2, 5, 10 en 15 minuten. Per run besteedt het hoogstens `--nap-max-minuten` aan de peilmerken (standaard 60; de workflow gebruikt 100).
 - **Als het misgaat:** wat binnen is, wordt bewaard in `nap_voortgang.json.gz` in de cache, en de volgende run gaat daar verder. De workflow heeft daarvoor een dagelijkse run (05:41 UTC) die alleen iets doet zolang dat bestand bestaat; je hoeft dus niets te doen. Sneller kan door de workflow met de hand te starten (zonder 'vernieuw', anders begint hij opnieuw). Tot de data compleet is, wordt de oude cache gebruikt; zonder cache wordt de laag overgeslagen en blijft de rest van de site gewoon werken. Uitzetten kan met `--zonder-nap`.
 
+## Disclaimer en vragen over de gegevens
+
+- **Akkoord bij het eerste bezoek:** een bezoeker ziet één keer een kort venster ("Voordat je de kaart opent", drie punten). Daaronder staat dat je, door verder te gaan, akkoord gaat met gebruik van de kaart zoals hij is, zonder er rechten aan te kunnen ontlenen. Pas na een klik op "Akkoord, naar de kaart" verschijnt de kaart. De browser onthoudt dat (localStorage, geen cookie; sleutel `zakkingskaart.intro`, versie 2). Pas je de tekst later inhoudelijk aan, verhoog dan de versie in de code, zodat iedereen hem opnieuw ziet. Een link naar `#over` opent direct het Over-venster.
+- **Geen oordeel of advies:** de site geeft geen advies, ook niet om een onderzoek te laten doen. In elke pop-up staat één regel "Openbare meetgegevens, zonder oordeel of advies", en rechtsonder de kaart "Geen oordeel of advies".
+- **Vragen en fouten gaan naar de bron:** het Over-venster en de meetgegevens-vensters verwijzen rechtstreeks naar de bron. Voor meetbouten is dat de gemeente Amsterdam, gebruik.basisinformatie@amsterdam.nl, het contactadres bij de dataset Kernregistratie Meetbouten op data.overheid.nl. Voor NAP-peilmerken is dat het contactformulier van de Servicedesk Data van Rijkswaterstaat. Wat de bron aanpast of verwijdert, verdwijnt bij de volgende automatische update vanzelf van de kaart. De site belooft zelf niets en noemt geen termijn.
+- **Noodknop (niet op de site genoemd):** wil je zelf toch eens een meetpunt weghalen, dan kan dat met de niet-openbare repository-variabele **`ZK_VERBERGEN`** (Settings → Secrets and variables → Actions → Variables). Zet er per regel een adres zoals het op de kaart staat in (dan verdwijnen alle meetbouten op dat adres), een meetboutnummer of een peilmerknummer. Start daarna de workflow met de hand. Het log toont alleen het aantal regels. Lokaal kan hetzelfde met `verbergen.txt` naast het script, of met `--verbergen <bestand>`.
+
 ## Bezoekersstatistieken
 
 GitHub Pages en de domeinregistrar geven geen bezoekersaantallen. Daarom telt de site anoniem via hetzelfde Google Apps Script als de feedback (`feedback/Code.gs`). Per bezoek meldt de kaart alleen dat hij is geopend, of dat op mobiel of desktop gebeurt en wat de herkomst is (Google, andere zoekmachine, social, andere site of direct). Bij het verlaten volgt hoe vaak er is gezocht, een punt is bekeken en meetgegevens zijn geopend. Opgeslagen worden alleen totalen per dag, plus per maand de domeinnamen van verwijzende sites. Er worden geen cookies, IP-adressen of kenmerken per bezoeker opgeslagen, en lokaal of door bots wordt niets geteld.
@@ -195,8 +202,9 @@ De URL komt in de website te staan; dat kan niet anders. Hij bevat alleen een wi
   - rood: 2,0 mm/jaar of meer
   - geel: 1,0 tot 2,0 mm/jaar
   - groen: minder dan 1,0 mm/jaar
-  - groen met donkere rand of stippellijn: **gestabiliseerd**, eerst minstens 1,5 mm/jaar en nu minder dan 0,5 mm/jaar. Dat wijst vaak op funderingsherstel.
+  - groen met donkere rand of stippellijn: **gestabiliseerd**, eerst minstens 1,5 mm/jaar en nu minder dan 0,5 mm/jaar
   - grijs: geen recente data (laatste meting meer dan 10 jaar oud, bout vervallen, of meetreeks te kort)
+- De namen zijn "Zakt snel", "Zakt matig" en "Zakt nauwelijks". De grenzen van 1 en 2 mm/jaar zijn ook klassegrenzen op de meetboutenkaart van de gemeente Amsterdam (`meetbouten.map` in github.com/Amsterdam/mapserver), die ook van groen via geel naar rood kleurt. De gemeente kleurt wel op de gemiddelde snelheid sinds de eerste meting.
 - Via **"Grenzen aanpassen"** verander je alle grenzen. Daar kun je ook oudere metingen alsnog laten kleuren.
 
 ## 7. Hoe de snelheid berekend wordt

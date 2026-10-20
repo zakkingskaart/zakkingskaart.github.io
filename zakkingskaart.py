@@ -10,10 +10,9 @@ gevel zakt, en maakt daar een interactieve kaart van. In website-modus komen
 daar de NAP-peilmerken van Rijkswaterstaat voor heel Nederland bij.
 
   rood    = zakt snel            (standaard: 2,0 mm/jaar of meer)
-  geel    = zakt normaal         (standaard: 1,0 tot 2,0 mm/jaar)
+  geel    = zakt matig         (standaard: 1,0 tot 2,0 mm/jaar)
   groen   = zakt nauwelijks      (standaard: minder dan 1,0 mm/jaar)
   groen, gestippeld/omrand = gestabiliseerd: eerst snel, nu nauwelijks
-            (vaak een teken van funderingsherstel)
   grijs   = geen recente of te weinig metingen
 
 Alle grenzen zijn op de kaart zelf aan te passen.
@@ -33,8 +32,8 @@ Uitvoer (standaard in de map 'zakkingskaart_uitvoer'):
     cache/                        -> opgehaalde ruwe data (voor snelle herhaling)
 
 Bronnen: Gemeente Amsterdam, dataset Meetbouten (CC0); Rijkswaterstaat, NAP-peilmerken
-(CC0). De kleuren zijn een indicatie op
-basis van gevelmetingen, geen oordeel over de fundering van een individueel pand.
+(CC0). De kaart geeft deze openbare gegevens eenvoudiger weer; ze geeft geen oordeel
+of advies over gebouwen, de grond of de waarde ervan.
 """
 
 import argparse
@@ -704,7 +703,7 @@ def classify(r, now_y, red, yellow, stab_early, stab_now, stale_years, status=""
     if r["recent"] >= red:
         return "zakt snel"
     if r["recent"] >= yellow:
-        return "zakt normaal"
+        return "zakt matig"
     return "zakt nauwelijks"
 
 
@@ -1089,15 +1088,18 @@ def nap_series(meas):
     hoogtes door elkaar en ontstaan nepsprongen van centimeters."""
     herzien = [m for m in meas if "=" in (m.get("j") or "")]
     use = herzien if herzien else meas
-    pts = {}
+    pts = []
     for m in use:
         try:
             t = date(1970, 1, 1) + timedelta(milliseconds=int(m["d"]))
+            h = float(m["h"])
         except (TypeError, ValueError, OverflowError):
             continue
         ty = t.year + (t.timetuple().tm_yday - 1) / 365.25
-        pts[round(ty, 3)] = (ty, float(m["h"]), t.isoformat())
-    pts = [pts[k] for k in sorted(pts)]
+        # Twee metingen op dezelfde dag (uit verschillende projecten) blijven allebei staan:
+        # ze worden hieronder gemiddeld, en verschillen ze te veel, dan is de reeks onzeker.
+        pts.append((ty, h, t.isoformat()))
+    pts.sort(key=lambda p: (p[0], p[1]))
     # Metingen binnen een jaar horen bij dezelfde meetcampagne: samenvoegen. Verschillen ze
     # meer dan 1 cm, dan is de reeks onbetrouwbaar (dubbele of herrekende waarde).
     serie, onzeker, groep = [], False, []
@@ -1146,6 +1148,25 @@ def nap_analyse(serie, min_span=8.0):
     return r
 
 
+def lees_verbergen(pad):
+    """Meetpunten die op verzoek niet op de kaart komen: per regel een meetboutnummer,
+    een peilmerknummer of een adres zoals op de kaart (bijvoorbeeld 'Teststraat 2'; dan
+    verdwijnen alle meetbouten op dat adres). Alles na # is commentaar. Komt uit het bestand
+    --verbergen en/of de omgevingsvariabele ZK_VERBERGEN (op GitHub een niet-openbare
+    repository-variabele, zodat niet zichtbaar is welke adressen om verwijdering vroegen)."""
+    regels = []
+    if pad and os.path.exists(pad):
+        with open(pad, encoding="utf-8") as fh:
+            regels += fh.read().splitlines()
+    regels += re.split(r"[\n;]", os.environ.get("ZK_VERBERGEN", ""))
+    ids = set()
+    for line in regels:
+        t = re.sub(r"\s+", " ", line.split("#", 1)[0]).strip()
+        if t:
+            ids.add(t.upper())
+    return ids
+
+
 def build_nap(punten, hist, args):
     """Maakt de compacte gegevens voor de kaart: punten (lui geladen) en reeksen (bij de eerste klik)."""
     by_p = {}
@@ -1153,8 +1174,9 @@ def build_nap(punten, hist, args):
         by_p.setdefault(m["p"], []).append(m)
     rows, reeksen, seen = [], [], set()
     stats = {"punten": 0, "metReeks": 0, "herzien": 0, "sprong": 0}
+    verborgen = getattr(args, "_verbergen", set())
     for pt in punten:
-        if pt["p"] in seen:
+        if pt["p"] in seen or pt["p"].upper() in verborgen:
             continue
         seen.add(pt["p"])
         serie, herzien, onzeker = nap_series(by_p.get(pt["p"], []))
@@ -1291,6 +1313,9 @@ def main():
     ap.add_argument("--google-verificatie", default=os.environ.get("ZK_GOOGLE_VERIFICATIE", ""),
                     help="--site: code van Google Search Console (meta-tag google-site-verification), "
                          "ook via ZK_GOOGLE_VERIFICATIE")
+    ap.add_argument("--verbergen", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "verbergen.txt"),
+                    help="bestand met adressen, meetbout- of peilmerknummers die op verzoek niet op de kaart komen "
+                         "(één per regel; standaard verbergen.txt naast het script; ook via ZK_VERBERGEN)")
     ap.add_argument("--zonder-nap", action="store_true",
                     help="--site: geen laag met NAP-peilmerken van Rijkswaterstaat (heel Nederland)")
     ap.add_argument("--nap-ververs", type=int, default=91,
@@ -1314,7 +1339,7 @@ def main():
     ap.add_argument("--min-periode", type=float, default=4.0,
                     help="minimale meetperiode in jaren voor een snelheid (standaard 4)")
     ap.add_argument("--rood", type=float, default=2.0, help="standaard grens 'zakt snel' in mm/jaar (op de kaart aanpasbaar)")
-    ap.add_argument("--geel", type=float, default=1.0, help="standaard grens 'zakt normaal' in mm/jaar (op de kaart aanpasbaar)")
+    ap.add_argument("--geel", type=float, default=1.0, help="standaard grens 'zakt matig' in mm/jaar (op de kaart aanpasbaar)")
     ap.add_argument("--max-ouderdom", type=float, default=10.0,
                     help="laatste meting ouder dan dit aantal jaren telt als 'geen recente data' (standaard 10)")
     ap.add_argument("--bbox", default=None,
@@ -1392,11 +1417,16 @@ def main():
     now_y = year_frac(today.isoformat())
     rows = []
     no_geom = 0
+    args._verbergen = lees_verbergen(args.verbergen)
+    if args._verbergen:
+        log(f"Verbergen op verzoek: {len(args._verbergen)} regel(s)")   # geen adressen in het (openbare) log
     for rec in bouten_raw:
         bid = rec.get("identificatie")
         if bid is None:
             continue
         bid = str(bid)
+        if bid.upper() in args._verbergen:
+            continue
         ll = parse_point(rec.get("geometrie") or rec.get("geometry"))
         if not ll or not all(math.isfinite(v) for v in ll):
             no_geom += 1
@@ -1404,6 +1434,8 @@ def main():
         if bbox and not (bbox[0] <= ll[0] <= bbox[2] and bbox[1] <= ll[1] <= bbox[3]):
             continue
         addr = find_address(rec)
+        if addr and re.sub(r"\s+", " ", addr).strip().upper() in args._verbergen:
+            continue
         blk_id, blk_code = find_relation(rec, "ligtInBouwblok")
         status = rec.get("statusOmschrijving") or ""
         if not status and rec.get("statusCode") is not None:
@@ -1510,7 +1542,7 @@ def main():
     log(f"Meetbouten op de kaart: {len(rows):,}".replace(",", "."))
     if no_geom:
         log(f"(zonder locatie overgeslagen: {no_geom})")
-    for k in ("zakt snel", "zakt normaal", "zakt nauwelijks", "gestabiliseerd", "geen recente data"):
+    for k in ("zakt snel", "zakt matig", "zakt nauwelijks", "gestabiliseerd", "geen recente data"):
         log(f"  {k:<20} {counts.get(k, 0):>7,}".replace(",", "."))
     log("")
     log(f"Controle: {fmt_int(sum(1 for b in rows if b['street']))} met adres, "
@@ -1611,8 +1643,23 @@ a.raw{display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)}
 #legend.collapsed .body{display:none}
 #modal,#fbModal,#aboutModal{position:fixed;inset:0;z-index:4000;background:rgba(20,20,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
 #modal[hidden],#fbModal[hidden],#aboutModal[hidden]{display:none}
+#intro{position:fixed;inset:0;z-index:4500;background:rgba(20,20,18,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+#intro[hidden]{display:none}
+#aboutModal{z-index:4600}
+#intro .mbox{max-width:520px}
+#intro .ibody{padding:4px 22px 20px;overflow:auto}
+#intro ul{margin:6px 0 14px;padding-left:20px}
+#intro li{margin:0 0 9px;line-height:1.45}
+#intro .iakk{margin:0 0 14px;line-height:1.45}
+#intro .iact{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#intro button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+#intro a{color:var(--accent)}
+.pop .disc{margin:6px 0 0;font-size:11.5px;color:#77746c}
+.pop .disc a{color:inherit}
 #legend .indep{margin:4px 0 0;font-size:12px;color:var(--muted)}
 #legend .indep a,#aboutModal a{color:var(--accent)}
+#aBody ul{margin:4px 0 10px;padding-left:20px}
+#aBody li{margin:0 0 6px}
 #aboutModal .mbox{max-width:640px}
 #aBody{overflow:auto;padding:4px 18px 18px;font-size:13.5px;line-height:1.55}
 #aBody h3{font-size:14px;margin:16px 0 4px}
@@ -1684,6 +1731,16 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     </form>
   </div></div>
 </div>
+<div id="intro" hidden role="dialog" aria-modal="true" aria-labelledby="iTitle">
+  <div class="mbox"><div class="mhead"><div><h2 id="iTitle">Voordat je de kaart opent</h2><div class="sub">Onafhankelijk hobbyproject, niet van de gemeente of Rijkswaterstaat</div></div></div>
+  <div class="ibody"><ul>
+    <li>Deze kaart maakt openbare meetgegevens van de gemeente Amsterdam en Rijkswaterstaat makkelijker te bekijken, en rekent ze om naar hoe snel een meetpunt zakt. Meer niet: de kaart geeft <b>geen oordeel of advies</b> over gebouwen, de grond of de waarde ervan.</li>
+    <li>Een meetpunt zit in één gevel of bouwwerk en zegt niet alles over de omgeving. Metingen kunnen oud, onvolledig of onjuist zijn.</li>
+    <li>Vragen over de gegevens, of klopt er iets niet? Die gaan naar de bron: de gemeente Amsterdam of Rijkswaterstaat. Wat zij aanpassen, komt vanzelf op deze kaart.</li>
+  </ul>
+  <p class="iakk">Door verder te gaan, ga je ermee akkoord dat je deze kaart gebruikt zoals hij is, en dat je er <b>geen rechten aan kunt ontlenen</b>.</p>
+  <div class="iact"><a href="#over" id="iMore">Over &amp; disclaimer</a><button id="iOk" type="button">Akkoord, naar de kaart</button></div></div></div>
+</div>
 <div id="aboutModal" hidden role="dialog" aria-modal="true" aria-labelledby="aTitle">
   <div class="mbox"><div class="mhead"><div><h2 id="aTitle">Over deze kaart</h2></div><button id="aClose" type="button" aria-label="Sluiten">&times;</button></div>
   <div id="aBody">
@@ -1692,13 +1749,22 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <h3>Wat de kaart laat zien</h3>
     <p>De kaart laat zien hoe snel gebouwen in Nederland zakken. Voor heel Nederland gebruikt ze de NAP-peilmerken van Rijkswaterstaat; voor Amsterdam daarnaast de veel fijnmazigere meetbouten van de gemeente.</p>
     <h3>Amsterdam: meetbouten</h3>
-    <p>In Amsterdam gebruikt de kaart de openbare meetboutgegevens van de gemeente en wordt ze wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;, vaak na funderingsherstel) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
+    <p>In Amsterdam gebruikt de kaart de openbare meetboutgegevens van de gemeente en wordt ze wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
     <h3>Heel Nederland: NAP-peilmerken</h3>
-    <p>Een NAP-peilmerk is een bronzen bout in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de mediaan van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk beweegt mee met de bodemdaling van de hele omgeving; het zegt dus iets over de plek, niet per se over de fundering van dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de reeks een onverklaarde sprong bevat, zijn grijs.</p>
+    <p>Een NAP-peilmerk is een bronzen bout in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de mediaan van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk beweegt mee met de bodemdaling van de hele omgeving; het zegt dus iets over de plek, niet per se over dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de reeks een onverklaarde sprong bevat, zijn grijs.</p>
+    <h3>Wat de kleuren betekenen</h3>
+    <p>De kleur hangt alleen af van hoe snel een meetpunt de laatste jaren is gezakt: groen bij minder dan 1 mm per jaar, geel bij 1 tot 2 mm per jaar, rood bij 2 mm per jaar of meer. Gestabiliseerd: eerst minstens 1,5 en nu minder dan 0,5 mm per jaar. Grijs: geen recente of te weinig metingen. De grenzen van 1 en 2 mm per jaar zijn ook klassegrenzen op de meetboutenkaart van de gemeente Amsterdam, die eveneens van groen via geel naar rood kleurt. De kleuren beschrijven alleen de gemeten snelheid; ze zeggen niet of iets goed of slecht is. Onder &ldquo;Grenzen aanpassen&rdquo; kun je zelf andere grenzen kiezen.</p>
     <h3>Disclaimer</h3>
-    <p>De kleuren zijn een berekende indicatie op basis van metingen aan gevels. Ze zijn geen oordeel over de fundering, de staat of de waarde van een pand, en kunnen onvolledig of verouderd zijn. Aan deze kaart kunnen geen rechten worden ontleend. Neem je een beslissing over een pand, laat dan een funderingsonderzoek doen door een deskundige en raadpleeg de officiële gegevens van de gemeente en Rijkswaterstaat.</p>
+    <p>Deze kaart geeft openbare meetgegevens van de gemeente Amsterdam en Rijkswaterstaat eenvoudiger weer en rekent ze om naar een snelheid. Daarbij kan ze afwijken van de weergave van de bron. De kaart geeft geen oordeel of advies over gebouwen, de grond of de waarde ervan, en kan onvolledig of verouderd zijn. De kaart wordt met zorg gemaakt, maar zonder garantie. Wie de kaart gebruikt, doet dat op eigen verantwoordelijkheid; aan de kaart kunnen geen rechten worden ontleend en de beheerder is niet aansprakelijk voor gevolgen van het gebruik, voor zover de wet dat toestaat.</p>
+    <h3>Vragen over de gegevens</h3>
+    <p>Deze site beheert de meetgegevens niet en kan ze niet aanpassen. Heb je een vraag over een meting, of denk je dat er iets niet klopt? Neem dan contact op met de bron:</p>
+    <ul>
+      <li><b>Meetbouten (Amsterdam):</b> gemeente Amsterdam, Basisinformatie, <a href="mailto:gebruik.basisinformatie@amsterdam.nl">gebruik.basisinformatie@amsterdam.nl</a> (contactadres bij de dataset <a href="https://data.overheid.nl/dataset/m6avdgklu2czqa" target="_blank" rel="noopener">Kernregistratie Meetbouten</a>).</li>
+      <li><b>NAP-peilmerken:</b> Rijkswaterstaat, <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">contactformulier Servicedesk Data</a>.</li>
+    </ul>
+    <p>Wat de bron aanpast of verwijdert, verdwijnt bij de volgende automatische update ook van deze kaart. De knop &ldquo;Feedback&rdquo; is voor opmerkingen over de website zelf.</p>
     <h3>Privacy</h3>
-    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd.</p>
+    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd. De adressen bij de meetpunten komen uit de openbare gegevens van de gemeente en Rijkswaterstaat; vragen daarover gaan naar de bron (zie &ldquo;Vragen over de gegevens&rdquo;).</p>
     <h3>Bronnen</h3>
     <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. NAP-peilmerken: Rijkswaterstaat (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
   </div></div>
@@ -1722,7 +1788,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
       <summary>Grenzen aanpassen</summary>
       <div class="set">
         <label for="sRed">Zakt snel vanaf (mm/jaar)</label><input id="sRed" type="number" step="0.1" min="0">
-        <label for="sYellow">Zakt normaal vanaf (mm/jaar)</label><input id="sYellow" type="number" step="0.1" min="0">
+        <label for="sYellow">Zakt matig vanaf (mm/jaar)</label><input id="sYellow" type="number" step="0.1" min="0">
         <label for="sStabE">Gestabiliseerd: eerder minstens (mm/jaar)</label><input id="sStabE" type="number" step="0.1" min="0">
         <label for="sStabN">... en nu minder dan (mm/jaar)</label><input id="sStabN" type="number" step="0.1" min="0">
         <label for="sStale">Laatste meting hooguit (jaar oud)</label><input id="sStale" type="number" step="1" min="1">
@@ -1745,10 +1811,18 @@ window.addEventListener("error",function(e){window.__showErr((e.message||"fout")
 function open(e){if(e)e.preventDefault();prev=document.activeElement;m.hidden=false;document.getElementById("aClose").focus();}
 function close(){m.hidden=true;if(location.hash==="#over"&&history.replaceState)history.replaceState(null,"",location.pathname+location.search);if(prev&&prev.focus)prev.focus();}
 document.getElementById("aboutLink").addEventListener("click",open);
+document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href="#over"]');if(a&&a.id!=="aboutLink")open(e);});
 document.getElementById("aClose").addEventListener("click",close);
 m.addEventListener("click",function(e){if(e.target===m)close();});
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!m.hidden)close();});
-if(location.hash==="#over")open();})();
+if(location.hash==="#over")open();
+window.addEventListener("hashchange",function(){if(location.hash==="#over"&&m.hidden)open();});
+// Eenmalig: "Goed om te weten". Eén keer per browser; daarna onthouden (geen cookie).
+var IK="zakkingskaart.intro",iv="2",it=document.getElementById("intro"),gezien=false;
+try{gezien=localStorage.getItem(IK)===iv;}catch(e){}
+if(!gezien&&location.hash!=="#over"){it.hidden=false;setTimeout(function(){var b=document.getElementById("iOk");if(b)b.focus();},0);}
+document.getElementById("iOk").addEventListener("click",function(){it.hidden=true;try{localStorage.setItem(IK,iv);}catch(e){}});
+})();
 </script>
 <script>
 function zkStart(D){
@@ -1801,9 +1875,9 @@ const fmtDate=iso=>iso?iso.slice(8,10)+"-"+iso.slice(5,7)+"-"+iso.slice(0,4):"�
 function median(a){const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
 function label(c){
   if(c==="rood")return["Zakt snel","vanaf "+nf(S.red,1)+" mm/jaar"];
-  if(c==="geel")return["Zakt normaal",nf(S.yellow,1)+" tot "+nf(S.red,1)+" mm/jaar"];
+  if(c==="geel")return["Zakt matig",nf(S.yellow,1)+" tot "+nf(S.red,1)+" mm/jaar"];
   if(c==="groen")return["Zakt nauwelijks","minder dan "+nf(S.yellow,1)+" mm/jaar"];
-  if(c==="stab")return["Gestabiliseerd","eerder ≥ "+nf(S.stabEarly,1)+", nu < "+nf(S.stabNow,1)+" mm/jaar; vaak hersteld"];
+  if(c==="stab")return["Gestabiliseerd","eerder ≥ "+nf(S.stabEarly,1)+", nu < "+nf(S.stabNow,1)+" mm/jaar"];
   return["Geen recente data","laatste meting > "+S.staleYears+" jaar oud, vervallen of te kort"];
 }
 function cls(b){
@@ -1839,7 +1913,7 @@ for(const k in bases){const t=bases[k];if(!t.on||k==="geen")continue;let ok=0,ba
   t.on("tileerror",()=>{bad++;if(!shown&&bad>=6&&ok===0){shown=true;const el=document.getElementById("msg");
     el.textContent="De achtergrondkaart laadt niet. Kies linksonder een andere achtergrond; de meetbouten werken ook zonder.";el.hidden=false;setTimeout(()=>el.hidden=true,8000);}});}
 L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
-map.attributionControl.addAttribution("Meetbouten: Gemeente Amsterdam");
+map.attributionControl.addAttribution("Meetbouten: Gemeente Amsterdam"+(M.napUrl?" · NAP: Rijkswaterstaat":"")+" · Geen oordeel of advies");
 
 const lineLayer=L.layerGroup().addTo(map), dotLayer=L.layerGroup().addTo(map);
 const inLine=new Uint8Array(B.length);
@@ -1943,7 +2017,7 @@ L.DomEvent.disableClickPropagation(document.getElementById("search"));
 document.getElementById("src").innerHTML=(M.napUrl?"Bronnen: Rijkswaterstaat, NAP-peilmerken (heel Nederland, CC0) en ":"Bron: ")+"Gemeente Amsterdam, meetbouten (api.data.amsterdam.nl), opgehaald "+fmtDate(M.generated)+". "+
   M.count.toLocaleString("nl-NL")+" meetbouten, waarvan "+M.withSeries.toLocaleString("nl-NL")+" met een meetreeks van minstens "+nf(M.minSpan,0)+" jaar. "+
   "Snelheid = verschil tussen de laatste meting en de meest recente meting die minstens "+nf(M.minSpan,0)+" jaar eerder ligt. "+
-  "Indicatie op basis van gevelmetingen, geen funderingsoordeel."+(M.proef?" <b>Proefrun: onvolledige data.</b>":"");
+  "Weergave van openbare meetgegevens, zonder oordeel of advies."+(M.proef?" <b>Proefrun: onvolledige data.</b>":"");
 
 // ---------- popups ----------
 function chart(b,c){return chartSeries(b[I.ser],b[I.rfrom],c);}
@@ -1983,7 +2057,7 @@ function openBout(i){
     '<tr><th>Totaal gezakt</th><td>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+b[I.n]+(b[I.last]?" · laatste "+fmtDate(b[I.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
     '</table>'+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Grafiek wordt geladen …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">Grafiek kon niet worden geladen.</p>':"")+
-    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a></div>';
+    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([b[I.lat],b[I.lon]]).setContent(html).openOn(map);
   curPop={i:i,p:p};
   const el=p.getElement&&p.getElement();
@@ -1998,7 +2072,7 @@ function openList(title,idx,latlng){
   const mix=KL.filter(k=>n[k]).map(k=>'<span style="white-space:nowrap"><i class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+COL[k]+'"></i> '+n[k]+"</span>").join(" &nbsp;");
   const rows=idx.map(i=>'<tr data-i="'+i+'"><td><i class="sw" style="background:'+COL[C[i]]+'"></i></td><td>'+esc(B[i][I.addr]||B[i][I.id])+'</td><td class="n">'+(B[i][I.recent]==null?"–":nf(B[i][I.recent]))+'</td><td class="n m">'+esc((B[i][I.last]||"").slice(0,4))+"</td></tr>").join("");
   const html='<div class="pop"><div class="ttl">'+esc(title)+'</div><div class="sub">'+idx.length+" meetbouten · mediaan recent "+(med==null?"–":nf(med)+" mm/jaar")+'</div>'+
-    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">mm/jaar recent · jaar laatste meting. Klik een regel voor details.</div></div>';
+    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">mm/jaar recent · jaar laatste meting. Klik een regel voor details.</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng(latlng).setContent(html).openOn(map);
   const el=p.getElement&&p.getElement();
   if(el)el.querySelectorAll("tr[data-i]").forEach(tr=>tr.addEventListener("click",()=>{const i=+tr.dataset.i;map.setView([B[i][I.lat],B[i][I.lon]],Math.max(map.getZoom(),18));setTimeout(()=>openBout(i),250);}));
@@ -2012,6 +2086,8 @@ document.getElementById("mClose").addEventListener("click",closeMeas);
 modal.addEventListener("click",e=>{if(e.target===modal)closeMeas();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!modal.hidden)closeMeas();});
 const SOORT={N:"Nulmeting",H:"Herhalingsmeting"};
+const SRCQ={gem:'<p class="mnote">Vragen over deze meetgegevens, of klopt er iets niet? Neem contact op met de gemeente Amsterdam: <a href="mailto:gebruik.basisinformatie@amsterdam.nl">gebruik.basisinformatie@amsterdam.nl</a>.</p>',
+  rws:'<p class="mnote">Vragen over deze meetgegevens, of klopt er iets niet? Neem contact op met Rijkswaterstaat via het <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">contactformulier Servicedesk Data</a>.</p>'};
 function measUrl(b,size){return M.api+"metingen/?hoortBijMeetbout.identificatie="+encodeURIComponent(b[I.id])+"&_format=json&_pageSize="+size;}
 function summaryHtml(b){
   const y=v=>v==null?"":Math.floor(v);
@@ -2050,7 +2126,7 @@ function openMeas(i){
     mBody.innerHTML=summaryHtml(Object.assign(b.slice(),{_i:i}))+
       '<div class="mt-wrap"><table class="mt"><thead><tr><th>Datum</th><th>Soort meting</th><th class="n">Hoogte t.o.v. NAP (m)</th><th class="n">Zakking sinds vorige (mm)</th><th class="n">Totaal gezakt (mm)</th><th class="n">Dagen sinds vorige</th><th class="n">Gem. snelheid sinds start (mm/jaar)</th><th>Gemeten door</th><th>Methode</th></tr></thead><tbody>'+
       (rows||'<tr><td colspan="9">Geen metingen gevonden.</td></tr>')+'</tbody></table></div>'+
-      '<p class="mnote">'+items.length+' metingen. Geel gemarkeerd: de periode waarover de recente snelheid is berekend. Zakking is positief als het punt lager is komen te liggen.</p>'+
+      '<p class="mnote">'+items.length+' metingen. Geel gemarkeerd: de periode waarover de recente snelheid is berekend. Zakking is positief als het punt lager is komen te liggen.</p>'+SRCQ.gem+
       rawSection(url,data,null);
     const pre=document.getElementById("rawjson");if(pre)pre.textContent=JSON.stringify(data,null,2);
   })
@@ -2252,7 +2328,7 @@ function napOpen(i){
     '</table>'+(r[NI.sprong]?'<p class="mnote">De reeks bevat een onverklaarde sprong (mogelijk een herberekening of meetfout); daarom grijs.</p>':"")+ch+
     '<p class="mnote">Een peilmerk meet de hoogte t.o.v. NAP, inclusief bodemdaling van de omgeving. Rijkswaterstaat meet het eens per 5–15 jaar.</p>'+
     (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">Alle meetgegevens bekijken</a>':"")+
-    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat (NAP), CC0</div></div>';
+    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat (NAP), CC0</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([r[NI.lat],r[NI.lon]]).setContent(html).openOn(map);
   NAP.cur={i:i,p:p};
   const el=p.getElement&&p.getElement();
@@ -2306,7 +2382,7 @@ function napMeas(i){
       (rows||'<tr><td colspan="8">Geen metingen gevonden.</td></tr>')+'</tbody></table></div>'+
       '<p class="mnote">'+items.length+' metingen'+(items.length!==nUsed?', waarvan '+nUsed+' gebruikt in de berekening':'')+'. Geel gemarkeerd: de periode waarover de recente snelheid is berekend.'+
       (herz&&items.length!==nUsed?' Grijs: oude waarden uit vóór de herziening van het NAP-stelsel. Rijkswaterstaat heeft die metingen later herrekend; de kaart gebruikt alleen de herrekende waarden (project met &ldquo;=&rdquo;), anders ontstaan schijnbare sprongen van centimeters.':'')+
-      ' Zakking is positief als het punt lager is komen te liggen. Metingen binnen één jaar tellen in de berekening als één meetcampagne.</p>'+
+      ' Zakking is positief als het punt lager is komen te liggen. Metingen binnen één jaar tellen in de berekening als één meetcampagne.</p>'+SRCQ.rws+
       napRawSection(link,null);
     const pre=document.getElementById("rawjson");if(pre)pre.textContent=JSON.stringify(data,null,2);
   })
