@@ -27,7 +27,7 @@ concurrency:
 jobs:
   bouwen:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 210
     outputs:
       doen: ${{ steps.nodig.outputs.doen }}
     permissions:
@@ -51,8 +51,8 @@ jobs:
         env:
           SCHEMA: ${{ github.event.schedule }}
         run: |
-          if [ "$SCHEMA" = "41 5 * * *" ] && [ ! -f cache/nap_voortgang.json.gz ]; then
-            echo "Dagelijkse run: de NAP-peilmerken zijn compleet, er is niets te doen."
+          if [ "$SCHEMA" = "41 5 * * *" ] && [ ! -f cache/nap_voortgang.json.gz ] && [ ! -f cache/egms_deel.bin.gz ]; then
+            echo "Dagelijkse run: NAP-peilmerken en satellietdata zijn compleet, er is niets te doen."
             echo "doen=nee" >> "$GITHUB_OUTPUT"
           else
             echo "doen=ja" >> "$GITHUB_OUTPUT"
@@ -65,6 +65,7 @@ jobs:
           ZK_SITE_URL: ${{ vars.ZK_SITE_URL }}                       # leeg = https://zakkingskaart.github.io/
           ZK_GOOGLE_VERIFICATIE: ${{ vars.ZK_GOOGLE_VERIFICATIE }}   # code uit Google Search Console
           ZK_VERBERGEN: ${{ vars.ZK_VERBERGEN }}                     # adressen/nummers die op verzoek niet op de kaart komen
+          EGMS_SLEUTEL: ${{ secrets.EGMS_SLEUTEL }}                  # Copernicus-sleutel (JSON) voor de satellietlaag
           VERNIEUW: ${{ inputs.vernieuw }}
           FORCEER: ${{ inputs.forceer }}
         run: |
