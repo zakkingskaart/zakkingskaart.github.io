@@ -1591,10 +1591,22 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .chip.stab{box-shadow:0 0 0 2px #08306b inset}
 .uitleg{font-size:15px;color:#3b3a36}
 ul.lijst{columns:2 220px;padding-left:18px}
+.filter{margin:12px 0}
+.filter input{width:100%;max-width:420px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
 footer{border-top:1px solid var(--line);background:#fff;margin-top:36px}
 footer .in{font-size:14px;color:var(--muted);padding-top:14px;padding-bottom:24px}
 footer p{margin:0 0 8px}
 """
+
+
+# Zoekveld dat de tabellen op een pagina al typend filtert (geen cookies, geen externe scripts).
+FILTER_HTML = ('<p class="filter"><input type="search" id="filter" placeholder="__PH__" aria-label="__PH__" autocomplete="off"></p>'
+               "<script>(function(){var f=document.getElementById('filter');if(!f)return;"
+               "function n(t){return t.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');}"
+               "f.addEventListener('input',function(){var q=n(f.value.trim());"
+               "document.querySelectorAll('.tabel.f').forEach(function(t){var z=0;"
+               "t.querySelectorAll('tbody tr').forEach(function(r){var ok=!q||n(r.textContent).indexOf(q)>=0;r.hidden=!ok;if(ok)z++;});"
+               "t.hidden=!z;var h=t.previousElementSibling;if(h&&h.tagName==='H2'&&h.dataset.p!=='1'){h.hidden=!z;}});});})();</script>")
 
 
 def _og_beeld(url):
@@ -1664,8 +1676,8 @@ def _cijfers(items):
         f'<div class="cijfer"><b>{w}</b><span>{_h(l)}</span></div>' for w, l in items) + "</div>"
 
 
-def _kaart_link(root, lat, lon, zoom):
-    return f"{root}?kaart={lat:.5f},{lon:.5f},{int(zoom)}"
+def _kaart_link(root, lat, lon, zoom, van=""):
+    return f"{root}?kaart={lat:.5f},{lon:.5f},{int(zoom)}" + (f"&amp;van={van}" if van else "")
 
 
 def _zoom_voor(bbox, lo=9, hi=16):
@@ -1677,14 +1689,14 @@ def _zoom_voor(bbox, lo=9, hi=16):
 def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, rows, gemeenten, buurten, og_url="",
                    egms=None):
     """Schrijft /gemeenten/, /gemeente/<naam>/ en /gemeente/amsterdam/<buurt>/.
-    Geeft de lijst met paden (voor de sitemap) terug."""
+    Geeft de lijst met paden (voor de sitemap) en de gegevens voor de links vanuit de kaart terug."""
     import shutil
     for d in ("gemeente", "gemeenten"):
         p = os.path.join(out_dir, d)
         if os.path.isdir(p):
             shutil.rmtree(p)
     if not gemeenten:
-        return []
+        return [], None
     datum = today.isoformat()
     paden = []
 
@@ -1693,8 +1705,10 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     g_tel = [_Telling() for _ in gemeenten]
     g_nap = [[] for _ in gemeenten]
     buiten = 0
+    nap_gem = []
     for r in nap_rows or []:
         gi = gidx.zoek(r[1], r[2])
+        nap_gem.append(-1 if gi is None else gi)
         if gi is None:
             buiten += 1
             continue
@@ -1713,16 +1727,18 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
 
     # --- Amsterdam: meetbouten en peilmerken per buurt ---
     b_tel, b_nap, b_straat, bslugs, a_tel = [], [], [], [], _Telling()
+    bout_buurt = [-1] * len(rows)
     if buurten:
         bidx = GebiedIndex(buurten)
         b_tel = [_Telling() for _ in buurten]
         b_nap = [_Telling() for _ in buurten]
         b_straat = [{} for _ in buurten]
         geen = 0
-        for b in rows:
+        for ri, b in enumerate(rows):
             k = BOUT_KLASSE[classify(b["r"], now_y, args.rood, args.geel, 1.5, 0.5, args.max_ouderdom, b["status"])]
             a_tel.voeg(k, b["r"]["recent"], b["r"]["lastY"])
             bi = bidx.zoek(b["lat"], b["lon"])
+            bout_buurt[ri] = -1 if bi is None else bi
             if bi is None:
                 geen += 1
                 continue
@@ -1808,7 +1824,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                            (fmt_int(t.met_recent), "met een recente snelheid"),
                            (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
                            (str(t.laatste or "–"), "laatste meting")]),
-                 f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb))}">Bekijk {_h(naam)} op de kaart</a>',
+                 f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb), "gemeente/" + slugs[gi] + "/")}">Bekijk {_h(naam)} op de kaart</a>',
                  "<h2>Peilmerken van Rijkswaterstaat</h2>", napzin(t, _h(naam))]
         if t.n:
             delen.append(_verdeling(t, args.rood, args.geel, False))
@@ -1828,7 +1844,8 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                 rijen.append(f'<tr><td><a href="{_h(bslugs[bi])}/">{_h(buurten[bi]["naam"])}</a></td>'
                              f'<td>{_h(buurten[bi].get("wijk") or "")}</td><td class="n">{fmt_int(bt.n)}</td>'
                              f'<td class="n">{_nl(bt.mediaan, 2)}</td><td class="n">{bt.laatste or "–"}</td></tr>')
-            delen.append('<div class="tabel"><table><thead><tr><th>Buurt</th><th>Wijk</th><th class="n">Meetbouten</th>'
+            delen.append(FILTER_HTML.replace("__PH__", "Zoek een buurt of wijk"))
+            delen.append('<div class="tabel f"><table><thead><tr><th>Buurt</th><th>Wijk</th><th class="n">Meetbouten</th>'
                          '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
                          + "".join(rijen) + "</tbody></table></div>")
         andere = [i for i in per_prov.get(g.get("prov") or "", []) if i != gi]
@@ -1864,7 +1881,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                                (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""),
                                 "doorsnee snelheid"),
                                (str(t.laatste or "–"), "laatste meting")]),
-                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 14, 16))}">Bekijk deze buurt op de kaart</a>',
+                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 14, 16), "gemeente/" + aslug + "/" + bslugs[bi] + "/")}">Bekijk deze buurt op de kaart</a>',
                      "<h2>Meetbouten</h2>"]
             if t.n:
                 delen.append(f"<p>In deze buurt meet de gemeente de hoogte van {fmt_int(t.n)} meetbouten in gevels. "
@@ -1912,11 +1929,12 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
              '<p class="lead">Per gemeente een samenvatting van de openbare metingen van Rijkswaterstaat: hoeveel '
              'peilmerken er zijn, van hoeveel bekend is hoe snel ze de laatste jaren zakken, en de doorsnee snelheid '
              '(de middelste waarde: de helft zakt sneller, de helft langzamer). '
-             'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.</p>']
+             'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.</p>',
+             FILTER_HTML.replace("__PH__", "Zoek je gemeente")]
     for prov, idxs in groepen:
         if prov:
             delen.append(f"<h2>{_h(prov)}</h2>")
-        delen.append('<div class="tabel"><table><thead><tr><th>Gemeente</th><th class="n">Peilmerken</th>'
+        delen.append('<div class="tabel f"><table><thead><tr><th>Gemeente</th><th class="n">Peilmerken</th>'
                      '<th class="n">Met recente snelheid</th><th class="n">Doorsnee (mm/jaar)</th></tr></thead><tbody>'
                      + "".join(f'<tr><td><a href="../gemeente/{slugs[i]}/">{_h(gemeenten[i]["naam"])}</a></td>'
                                f'<td class="n">{fmt_int(g_tel[i].n)}</td><td class="n">{fmt_int(g_tel[i].met_recent)}</td>'
@@ -1930,7 +1948,11 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         [("Zakkingskaart", root), ("Gemeenten", None)], "\n".join(delen), datum, og_url, bool(egms)))
     write_text(os.path.join(out_dir, root_css.split("?")[0]), GEBIED_CSS)
     log(f"         {len(paden)} pagina's geschreven")
-    return paden
+    nav = {"g": [[slugs[i], g["naam"], str(g.get("code") or "")] for i, g in enumerate(gemeenten)],
+           "a": -1 if ams is None else ams,
+           "b": [[bslugs[i], b["naam"]] if toon_buurt[i] else None for i, b in enumerate(buurten or [])],
+           "bout": bout_buurt, "nap": nap_gem}
+    return paden, nav
 
 
 # --------------------------------------------------------------------------
@@ -2394,7 +2416,7 @@ def short_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
 
 
-def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, extra_paden=(), og_url=""):
+def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, extra_paden=(), og_url="", nav=None):
     """Website-modus: een lichte index.html die data.json ophaalt; de meetreeksen voor de
     grafiekjes staan apart in reeksen.json en worden na het tekenen van de kaart geladen.
     Bestandsnamen krijgen een ?v=<hash> zodat browsers na een update de nieuwe data pakken."""
@@ -2413,12 +2435,18 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
         nap_rows, nap_reeksen, nap_datum = nap
         nr = json.dumps(nap_reeksen, ensure_ascii=False, separators=(",", ":"))
         write_text(os.path.join(out_dir, "nap_reeksen.json"), nr)
-        nd = json.dumps({"p": nap_rows, "reeksen": "nap_reeksen.json?v=" + short_hash(nr), "opgehaald": nap_datum},
-                        ensure_ascii=False, separators=(",", ":"))
+        nj = {"p": nap_rows, "reeksen": "nap_reeksen.json?v=" + short_hash(nr), "opgehaald": nap_datum}
+        if nav and len(nav.get("nap") or []) == len(nap_rows):
+            nj["g"] = nav["nap"]
+        nd = json.dumps(nj, ensure_ascii=False, separators=(",", ":"))
         write_text(os.path.join(out_dir, "nap.json"), nd)
         meta["napUrl"] = "nap.json?v=" + short_hash(nd)
         meta["napCount"] = len(nap_rows)
         meta["napService"] = args.nap_service.rstrip("/")
+    if nav and "gemeenten/" in extra_paden:
+        meta["gebied"] = {k: nav[k] for k in ("g", "a", "b")}
+        if len(nav.get("bout") or []) == len(Bdata):
+            meta["gebied"]["bout"] = nav["bout"]
     core = [b[:17] + [None] for b in Bdata]
     if not args.zonder_grafieken:
         reeksen = json.dumps([b[17] for b in Bdata], ensure_ascii=False, separators=(",", ":"))
@@ -2461,7 +2489,7 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
 
     page = (HTML_TEMPLATE
             .replace("__HEAD_EXTRA__", "\n".join(head))
-            .replace("__GEBIEDLINK__", ' · <a href="gemeenten/">Per gemeente</a>' if "gemeenten/" in extra_paden else "")
+            .replace("__GEBIEDLINK__", ' · <a href="gemeenten/">Cijfers per gemeente en buurt</a>' if "gemeenten/" in extra_paden else "")
             .replace("__LEAFLET_CSS__", "leaflet/leaflet.css?v=" + LEAFLET_VERSION)
             .replace("__LEAFLET_JS__", "leaflet/leaflet.js?v=" + LEAFLET_VERSION)
             .replace("__BOOT__", boot))
@@ -2721,7 +2749,7 @@ def main():
         paden = []
         site_url = args.site_url.strip()
         site_url += "" if site_url.endswith("/") else "/"
-        gem = buurten = None
+        gem = buurten = nav = None
         if not args.zonder_gebieden:
             gem = laad_gebieden(cache_dir, "gemeenten", haal_gemeenten, args, state, 300, 400)
             buurten = laad_gebieden(cache_dir, "ams_buurten", haal_ams_buurten, args, state, 100, 1500) if gem else None
@@ -2745,16 +2773,16 @@ def main():
         if not args.zonder_gebieden:
             if gem:
                 try:
-                    paden = write_gebieden(out_dir, site_url, "gebied.css?v=" + short_hash(GEBIED_CSS), args, now_y,
+                    paden, nav = write_gebieden(out_dir, site_url, "gebied.css?v=" + short_hash(GEBIED_CSS), args, now_y,
                                            today, nap[0] if nap else [], rows, gem, buurten, og_url,
                                            egms if meta.get("egmsUrl") else None)
                 except Exception as e:  # pagina's mogen de kaart nooit tegenhouden
                     log(f"   let op: pagina's per gemeente niet gemaakt ({e.__class__.__name__}: {e})")
-                    paden = []
+                    paden, nav = [], None
                     import shutil
                     for d in ("gemeente", "gemeenten"):
                         shutil.rmtree(os.path.join(out_dir, d), ignore_errors=True)
-        html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap, paden, og_url)
+        html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap, paden, og_url, nav)
         csv_path = os.path.join(out_dir, "meetbouten_analyse.csv")
         if not args.proef:
             state["vorigePublicatie"] = {"datum": today.isoformat(), "meetbouten": len(rows),
@@ -2836,6 +2864,16 @@ html,body{height:100%;margin:0;font:13px/1.45 system-ui,-apple-system,"Segoe UI"
 #search button,.btn{padding:7px 12px;border:0;border-radius:7px;background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
 #search button:focus-visible,.btn:focus-visible,#legend button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 #msg{position:absolute;top:58px;left:58px;z-index:1000;background:#fff3cd;border:1px solid #f0d58a;padding:6px 10px;border-radius:7px}
+#msg a{font-weight:600}
+#terug{position:absolute;top:58px;left:58px;z-index:1000;display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;font-size:14px}
+#terug[hidden]{display:none}
+#terug a{font-weight:600;text-decoration:none}
+#terug button{border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);padding:0 4px}
+body.terug #msg{top:96px}
+body.terug #rond{top:98px;max-height:calc(100% - 128px)}
+.pop .meer{margin:6px 0 0;font-size:13px}
+.pop .meer a,#rond .meer a{font-weight:600}
+#rond .meer{margin:8px 0 0;font-size:13px}
 #loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2500;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:0 6px 20px rgba(0,0,0,.12);font-weight:600;max-width:calc(100vw - 32px);text-align:center}
 #loading.err{background:#fde8e6;color:#7a1c12;border-color:#e9a79f;font-weight:500}
 #loading[hidden]{display:none}
@@ -2888,6 +2926,8 @@ a.raw{display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)}
 #rond .rbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:#eee;margin:4px 0 2px}
 #rond .rbar i{display:block;height:100%}
 #rond .rk{font-size:12px;color:var(--muted)}
+.pop .pand,#rond .pand{margin:6px 0 0;font-size:13px}
+.pop .pand .m,#rond .pand .m{color:var(--muted);font-size:12px}
 .pop .omg{margin:6px 0 0;font-size:12px;color:#3b3a36;background:#f4f2ec;border-radius:6px;padding:5px 7px}
 @media (max-width:640px){
   #rond{left:12px;width:calc(100vw - 24px);max-height:45%}
@@ -2970,6 +3010,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <datalist id="streets"></datalist>
 </form>
 <div id="msg" hidden></div>
+<div id="terug" class="panel" hidden></div>
 <div id="rond" class="panel" hidden role="region" aria-label="Meetpunten rond het gezochte adres"></div>
 <div id="loading" role="status" aria-live="polite" hidden>Kaartgegevens laden …</div>
 <div id="fbModal" hidden role="dialog" aria-modal="true" aria-labelledby="fbTitle">
@@ -3010,6 +3051,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
       <li><b>Peilmerk:</b> een metalen boutje in een gebouw of brug, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De hoogte wordt gemeten ten opzichte van het NAP (Normaal Amsterdams Peil), de standaardhoogte van Nederland.</li>
       <li><b>Satellietmeting:</b> satellieten meten met radar de hoogte van grond, straten en gebouwen samen, per blok van 100 bij 100 meter.</li>
       <li><b>Doorsnee (of doorgaans):</b> de middelste waarde van een groep meetpunten: de helft zakt sneller, de helft langzamer. Zo bepaalt één uitschieter niet het beeld.</li>
+      <li><b>Bouwjaar en adressen:</b> uit de BAG, het landelijke register van gebouwen en adressen. Bij heel oude panden is het bouwjaar soms een schatting. Het aantal adressen laat zien of een pand bijvoorbeeld een appartementengebouw is.</li>
       <li><b>Laatste jaren:</b> de snelheid berekend uit de laatste meting en een meting van minstens 4 jaar eerder (bij peilmerken minstens 8 jaar).</li>
     </ul>
     <h3>Amsterdam: meetbouten</h3>
@@ -3030,9 +3072,9 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     </ul>
     <p>Wat de bron aanpast of verwijdert, verdwijnt bij de volgende automatische update ook van deze kaart. De knop &ldquo;Feedback&rdquo; is voor opmerkingen over de website zelf.</p>
     <h3>Privacy</h3>
-    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd. De adressen bij de meetpunten komen uit de openbare gegevens van de gemeente en Rijkswaterstaat; vragen daarover gaan naar de bron (zie &ldquo;Vragen over de gegevens&rdquo;).</p>
+    <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, het bouwjaar van het pand op een aangeklikte plek wordt opgevraagd bij de BAG-dienst van PDOK, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd. De adressen bij de meetpunten komen uit de openbare gegevens van de gemeente en Rijkswaterstaat; vragen daarover gaan naar de bron (zie &ldquo;Vragen over de gegevens&rdquo;).</p>
     <h3>Bronnen</h3>
-    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
+    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. Bouwjaar en adressen per pand: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (publiek domein). NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
   </div></div>
 </div>
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
@@ -3345,13 +3387,13 @@ function openBout(i){
     '<tr><th>Totaal gezakt</th><td>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+b[I.n]+(b[I.last]?" · laatste "+fmtDate(b[I.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
     '</table>'+omgRegel(omgeving(b[I.lat],b[I.lon],ROND_M,i,-1))+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Grafiek wordt geladen …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">Grafiek kon niet worden geladen.</p>':"")+
-    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · '+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · '+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+meerHtml(gebBout(i))+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([b[I.lat],b[I.lon]]).setContent(html).openOn(map);
   curPop={i:i,p:p};
   const el=p.getElement&&p.getElement();
   if(el){const a=el.querySelector("a[data-meas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();openMeas(i);});}
-  bindLink(el);rondLink(el,b[I.lat],b[I.lon],b[I.addr]||("meetbout "+b[I.id]));
-  egPopup(el,b[I.lat],b[I.lon]);
+  bindLink(el);rondLink(el,b[I.lat],b[I.lon],b[I.addr]||("meetbout "+b[I.id]),6);
+  egPopup(el,b[I.lat],b[I.lon]);bagPopup(el,b[I.lat],b[I.lon],6);
 }
 // "Link naar dit punt": kopieert de link; lukt dat niet, dan gewoon openen.
 function bindLink(el){
@@ -3450,6 +3492,7 @@ const streetKeys=[...byStreet.keys()].sort((a,b)=>a.localeCompare(b,"nl"));
 document.getElementById("streets").innerHTML=streetKeys.map(k=>'<option value="'+esc(nameOf.get(k))+'">').join("");
 const msg=document.getElementById("msg");
 function say(t){msg.textContent=t;msg.hidden=false;clearTimeout(say._t);say._t=setTimeout(()=>msg.hidden=true,3500);}
+function sayHtml(h,ms){msg.innerHTML=h;msg.hidden=false;clearTimeout(say._t);say._t=setTimeout(()=>msg.hidden=true,ms||9000);}
 document.getElementById("search").addEventListener("submit",e=>{
   e.preventDefault();
   const q=document.getElementById("q").value.trim();if(!q)return;
@@ -3469,7 +3512,7 @@ function showStreet(key,q){
   const idx=byStreet.get(key);
   const num=q.match(/\s(\d+)/);
   if(num){const n=parseInt(num[1],10);let best=null,bd=1e9;for(const i of idx){const h=houseNo(B[i][I.addr]);if(Math.abs(h-n)<bd){bd=Math.abs(h-n);best=i;}}
-    if(best!=null&&bd<=4){map.setView([B[best][I.lat],B[best][I.lon]],17);setTimeout(()=>openBout(best),300);toonRond(B[best][I.lat],B[best][I.lon],B[best][I.addr]||q);return;}}
+    if(best!=null&&bd<=4){map.setView([B[best][I.lat],B[best][I.lon]],17);setTimeout(()=>openBout(best),300);toonRond(B[best][I.lat],B[best][I.lon],B[best][I.addr]||q,6);return;}}
   const bb=L.latLngBounds(idx.map(i=>[B[i][I.lat],B[i][I.lon]]));
   map.fitBounds(bb,{maxZoom:17,padding:[60,60]});
   setTimeout(()=>openList(nameOf.get(key),idx,bb.getCenter()),400);
@@ -3481,17 +3524,52 @@ function fuzzyStreet(q){
 }
 const PDOK_LS="https://api.pdok.nl/bzk/locatieserver/search/v3_1/free";
 function zoekPdok(q){
-  const u=PDOK_LS+"?rows=1&fl=weergavenaam,type,centroide_ll&fq="+encodeURIComponent("type:(adres OR weg OR postcode OR woonplaats OR gemeente)")+"&q="+encodeURIComponent(q);
+  const u=PDOK_LS+"?rows=1&fl=weergavenaam,type,centroide_ll,gemeentecode,gemeentenaam&fq="+encodeURIComponent("type:(adres OR weg OR postcode OR woonplaats OR gemeente)")+"&q="+encodeURIComponent(q);
   return fetch(u).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(j=>{
     const d=j&&j.response&&j.response.docs&&j.response.docs[0];if(!d||!d.centroide_ll)return false;
     const m=String(d.centroide_ll).match(/POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);if(!m)return false;
     const z=({adres:17,postcode:16,weg:16,woonplaats:13,gemeente:12})[d.type]||15;
     const la=parseFloat(m[2]),lo=parseFloat(m[1]);
     map.setView([la,lo],z);
-    if(d.type==="adres"||d.type==="postcode"||d.type==="weg")toonRond(la,lo,d.weergavenaam||q);
-    else{rondSluit();say(d.weergavenaam||q);}
+    const gem={code:d.gemeentecode,naam:d.gemeentenaam};
+    if(d.type==="adres"||d.type==="postcode"||d.type==="weg")toonRond(la,lo,d.weergavenaam||q,d.type==="adres"?3:null,gem);
+    else{rondSluit();const x=gebCode(gem.code,gem.naam||(d.type==="gemeente"?String(d.weergavenaam||"").replace(/^Gemeente\s+/i,""):""));
+      if(x)sayHtml(esc(d.weergavenaam||q)+' · <a href="'+esc(x.u)+'">Cijfers voor gemeente '+esc(x.n)+' →</a>');else say(d.weergavenaam||q);}
     return true;
   });
+}
+
+// ---------- links naar de pagina's per gemeente en buurt ----------
+const GB=M.gebied||null;
+function gebGem(i){return GB&&i>=0&&GB.g[i]?{u:"gemeente/"+GB.g[i][0]+"/",n:GB.g[i][1]}:null;}
+function gebBuurt(i){return GB&&GB.a>=0&&i>=0&&GB.b&&GB.b[i]?{u:"gemeente/"+GB.g[GB.a][0]+"/"+GB.b[i][0]+"/",n:GB.b[i][1]}:null;}
+function gebBout(i){if(!GB)return null;const bi=GB.bout?GB.bout[i]:-1;return gebBuurt(bi)||gebGem(GB.a);}
+function gebNap(i){return GB&&NAP.g?gebGem(NAP.g[i]):null;}
+function gebCode(code,naam){
+  if(!GB)return null;const c=String(code||"").replace(/\D/g,"").padStart(4,"0"),nm=String(naam||"").toLowerCase();
+  let i=code?GB.g.findIndex(g=>g[2]&&g[2].replace(/\D/g,"").padStart(4,"0")===c):-1;
+  if(i<0&&nm)i=GB.g.findIndex(g=>g[1].toLowerCase()===nm);
+  return gebGem(i);
+}
+function meerHtml(x){return x?'<p class="meer"><a href="'+esc(x.u)+'">Cijfers voor '+esc(x.n)+' →</a></p>':"";}
+// gemeente op een plek: via het dichtstbijzijnde adres bij de PDOK Locatieserver (alleen als het nodig is)
+const PDOK_REV="https://api.pdok.nl/bzk/locatieserver/search/v3_1/reverse";
+function gebBuurtPlek(lat,lon){
+  // in Amsterdam: de buurt van de dichtstbijzijnde meetbout (binnen 120 m)
+  if(!GB)return null;const kx=111320*Math.cos(lat*Math.PI/180);let bi=-1,bd=120;
+  for(let i=0;i<B.length;i++){const dx=(B[i][I.lon]-lon)*kx,dy=(B[i][I.lat]-lat)*111320,d=Math.hypot(dx,dy);if(d<bd){bd=d;bi=i;}}
+  return bi>=0?gebBout(bi):null;
+}
+function gebPlek(lat,lon){
+  if(!GB)return Promise.resolve(null);
+  // in Amsterdam: de buurt van de dichtstbijzijnde meetbout (binnen 120 m)
+  const kx=111320*Math.cos(lat*Math.PI/180);let bi=-1,bd=120;
+  for(let i=0;i<B.length;i++){const dx=(B[i][I.lon]-lon)*kx,dy=(B[i][I.lat]-lat)*111320,d=Math.hypot(dx,dy);if(d<bd){bd=d;bi=i;}}
+  if(bi>=0){const x=gebBout(bi);if(x)return Promise.resolve(x);}
+  return fetch(PDOK_REV+"?lat="+lat.toFixed(6)+"&lon="+lon.toFixed(6)+"&type=adres&rows=1&fl=gemeentecode,gemeentenaam")
+    .then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(j=>{const d=j&&j.response&&j.response.docs&&j.response.docs[0];return d?gebCode(d.gemeentecode,d.gemeentenaam):null;})
+    .catch(()=>null);
 }
 
 // ---------- omgeving: meetpunten binnen een straal ----------
@@ -3529,9 +3607,10 @@ const ROND={el:document.getElementById("rond"),cirkel:null};
 // De stippelcirkel staat in een eigen laag zonder klikken, zodat meetpunten eronder klikbaar blijven.
 if(map.createPane){map.createPane("rond");const rp=map.getPane("rond");if(rp){rp.style.zIndex=450;rp.style.pointerEvents="none";}}
 ROND.rend=L.svg({pane:"rond"});
-function rondSluit(){ROND.el.hidden=true;ROND.terug=false;if(ROND.cirkel){map.removeLayer(ROND.cirkel);ROND.cirkel=null;}}
-function toonRond(lat,lon,naam){
+function rondSluit(){ROND.el.hidden=true;ROND.terug=false;ROND.pandVorm=false;if(typeof bagVormWeg==="function")bagVormWeg();if(ROND.cirkel){map.removeLayer(ROND.cirkel);ROND.cirkel=null;}}
+function toonRond(lat,lon,naam,pandM,gem){
   if(ROND.cirkel)map.removeLayer(ROND.cirkel);
+  ROND.pandVorm=false;bagVormWeg();ROND.geb=null;
   ROND.cirkel=L.circle([lat,lon],{radius:ROND_M,color:RING,weight:2,dashArray:"5 5",fill:false,interactive:false,renderer:ROND.rend,pane:"rond"}).addTo(map);
   const blok=(t,soort,meer,enkel)=>{
     if(!t.n)return '<p class="rs"><b>'+soort+'</b>: geen binnen '+ROND_M+' m'+(isFinite(t.dichtst)?' (dichtstbijzijnde op '+afstand(t.dichtst)+')':'')+'.</p>';
@@ -3542,11 +3621,16 @@ function toonRond(lat,lon,naam){
   const teken=()=>{
     const o=omgeving(lat,lon,ROND_M);
     ROND.el.innerHTML='<div class="rt"><div><h2>Rond '+esc(naam)+'</h2><div class="rk">Alle meetpunten binnen '+ROND_M+' meter (de stippellijn op de kaart)</div></div><button class="x" type="button" aria-label="Sluiten">×</button></div>'+
+      (pandM!=null?'<div id="rondPand"></div>':"")+
       ((o.b.n||o.b.dichtst<3000)?blok(o.b,"Meetbouten","meetbouten","meetbout"):"")+(M.napUrl?(o.napKlaar?blok(o.p,"Peilmerken","peilmerken","peilmerk"):'<p class="rs rk">Peilmerken laden …</p>'):"")+
       (M.egmsUrl?'<div id="rondEg"><p class="rs rk">Satellietmetingen laden …</p></div>':"")+
-      '<p class="rs rk">Gemeten snelheden, zonder oordeel of advies. Klik op een punt voor details.</p>';
+      '<div id="rondGeb"></div><p class="rs rk">Gemeten snelheden, zonder oordeel of advies. Klik op een punt voor details.</p>';
     ROND.el.querySelector(".x").addEventListener("click",rondSluit);
     ROND.el.hidden=false;
+    (ROND.geb?Promise.resolve(ROND.geb):(gebBuurtPlek(lat,lon)||(gem&&gebCode(gem.code,gem.naam)))?Promise.resolve(gebBuurtPlek(lat,lon)||gebCode(gem.code,gem.naam)):gebPlek(lat,lon)).then(x=>{
+      ROND.geb=x;const box=document.getElementById("rondGeb");if(x&&box&&!ROND.el.hidden)box.innerHTML=meerHtml(x);});
+    if(pandM!=null)bagPand(lat,lon,pandM).then(p=>{const box=document.getElementById("rondPand");
+      if(!p||!box||ROND.el.hidden)return;box.innerHTML=bagTekst(p);ROND.pandVorm=true;bagVorm(p.geom);});
     if(M.egmsUrl)egRond(lat,lon,ROND_M).then(e=>{
       const box=document.getElementById("rondEg");if(!box)return;
       if(!e||!e.n){box.innerHTML='<p class="rs"><b>Satelliet</b>: hier is binnen '+ROND_M+' m niets gemeten.</p>';return;}
@@ -3561,11 +3645,11 @@ function toonRond(lat,lon,naam){
 }
 L.DomEvent.disableClickPropagation(ROND.el);L.DomEvent.disableScrollPropagation(ROND.el);
 map.on("contextmenu",e=>{if(e.originalEvent&&e.originalEvent.preventDefault)e.originalEvent.preventDefault();
-  map.closePopup();toonRond(e.latlng.lat,e.latlng.lng,"dit punt");});
+  map.closePopup();toonRond(e.latlng.lat,e.latlng.lng,"dit punt",2);});
 // link 'In de buurt' in een pop-up
-function rondLink(el,lat,lon,naam){
+function rondLink(el,lat,lon,naam,pandM){
   if(!el)return;const a=el.querySelector("a[data-rond]");if(!a)return;
-  a.addEventListener("click",ev=>{ev.preventDefault();map.closePopup();toonRond(lat,lon,naam);});
+  a.addEventListener("click",ev=>{ev.preventDefault();map.closePopup();toonRond(lat,lon,naam,pandM);});
 }
 const RONDA='<a class="raw" href="#" data-rond>Alles binnen '+ROND_M+' m</a> · ';
 // Op mobiel is er geen ruimte voor paneel én pop-up: paneel even weg zolang een pop-up open is.
@@ -3630,7 +3714,7 @@ function napCls(r){
 function napLoad(){
   if(NAP.state==="laden")return;NAP.state="laden";napNote("Peilmerken laden …");
   fetch(M.napUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
-  .then(d=>{NAP.rows=d.p||[];NAP.serUrl=d.reeksen;NAP.opgehaald=d.opgehaald||"";NAP.state="ok";napRefresh(true);})
+  .then(d=>{NAP.rows=d.p||[];NAP.g=Array.isArray(d.g)&&d.g.length===NAP.rows.length?d.g:null;NAP.serUrl=d.reeksen;NAP.opgehaald=d.opgehaald||"";NAP.state="ok";napRefresh(true);})
   .catch(e=>{NAP.state="fout";napNote("De peilmerken konden niet worden geladen ("+(e&&e.message||e)+").");});
 }
 function napLoadSer(){
@@ -3710,13 +3794,13 @@ function napOpen(i){
     '</table>'+omgRegel(omgeving(r[NI.lat],r[NI.lon],ROND_M,-1,i))+(r[NI.sprong]?'<p class="mnote">In de metingen zit een plotselinge sprong die niet te verklaren is (misschien een meetfout of een andere rekenmethode). Daarom is dit punt grijs.</p>':"")+ch+
     '<p class="mnote">Een peilmerk is een metalen boutje in een gebouw of brug. Rijkswaterstaat meet eens per 5 tot 15 jaar hoe hoog het ligt. Het zakt mee met de grond in de omgeving.</p>'+
     (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">Alle meetgegevens bekijken</a> · ':"")+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(r[NI.p])+'" data-link>Link naar dit punt</a>'+
-    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat</div>'+meerHtml(gebNap(i))+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([r[NI.lat],r[NI.lon]]).setContent(html).openOn(map);
   NAP.cur={i:i,p:p};
   const el=p.getElement&&p.getElement();
   if(el){const a=el.querySelector("a[data-nmeas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();napMeas(i);});}
-  bindLink(el);rondLink(el,r[NI.lat],r[NI.lon],"peilmerk "+r[NI.p]);
-  egPopup(el,r[NI.lat],r[NI.lon]);
+  bindLink(el);rondLink(el,r[NI.lat],r[NI.lon],"peilmerk "+r[NI.p],6);
+  egPopup(el,r[NI.lat],r[NI.lon]);bagPopup(el,r[NI.lat],r[NI.lon],6);
   if(!NAP.ser)napLoadSer();
 }
 function napQueryUrl(p,fmt){
@@ -3905,12 +3989,78 @@ function egPopup(el,lat,lon){
   });
 }
 
+// ---------- pand op een plek: bouwjaar en aantal adressen (BAG via PDOK, publiek domein) ----------
+const BAG_API="https://api.pdok.nl/kadaster/bag/ogc/v2/collections/pand/items";
+const BAG={cache:new Map(),vorm:null};
+function bagRingen(g){if(!g)return[];if(g.type==="Polygon")return[g.coordinates[0]];if(g.type==="MultiPolygon")return g.coordinates.map(p=>p[0]);return[];}
+function bagAfstand(lat,lon,ringen){
+  // 0 als het punt in het pand ligt, anders de afstand in meters tot de rand
+  const kx=111320*Math.cos(lat*Math.PI/180),ky=111320;let best=Infinity;
+  for(const r of ringen){let binnen=false;
+    for(let i=0,j=r.length-1;i<r.length;j=i++){
+      const xi=(r[i][0]-lon)*kx,yi=(r[i][1]-lat)*ky,xj=(r[j][0]-lon)*kx,yj=(r[j][1]-lat)*ky;
+      if((yi>0)!==(yj>0)&&0<(xj-xi)*(0-yi)/((yj-yi)||1e-12)+xi)binnen=!binnen;
+      const dx=xj-xi,dy=yj-yi,l2=dx*dx+dy*dy;let t=l2?-(xi*dx+yi*dy)/l2:0;t=Math.max(0,Math.min(1,t));
+      const d=Math.hypot(xi+t*dx,yi+t*dy);if(d<best)best=d;}
+    if(binnen)return 0;}
+  return best;
+}
+function bagPand(lat,lon,maxM){
+  const k=lat.toFixed(5)+","+lon.toFixed(5)+","+maxM;
+  if(BAG.cache.has(k))return BAG.cache.get(k);
+  const r=Math.max(maxM,2)+3,dy=r/111320,dx=r/(111320*Math.cos(lat*Math.PI/180));
+  const u=BAG_API+"?f=json&limit=30&bbox="+[lon-dx,lat-dy,lon+dx,lat+dy].map(v=>v.toFixed(6)).join(",");
+  const pr=fetch(u).then(x=>{if(!x.ok)throw new Error("HTTP "+x.status);return x.json();}).then(j=>{
+    let best=null,bd=Infinity;
+    for(const f of (j&&j.features)||[]){const pp=f.properties||{},st=String(pp.status||"");
+      if(/gesloopt|niet gerealiseerd/i.test(st))continue;
+      const d=bagAfstand(lat,lon,bagRingen(f.geometry));if(d<bd){bd=d;best=f;}}
+    if(!best||bd>maxM)return null;
+    const pp=best.properties||{};
+    return{bouwjaar:pp.bouwjaar,adressen:pp.aantal_verblijfsobjecten,status:String(pp.status||""),geom:best.geometry};
+  }).catch(()=>null);
+  BAG.cache.set(k,pr);pr.then(v=>{if(v===null)setTimeout(()=>BAG.cache.delete(k),60000);});
+  return pr;
+}
+function bagTekst(p){
+  const d=[];const j=+p.bouwjaar;
+  d.push(j>=1200&&j<=new Date().getFullYear()+5?"gebouwd in "+j:"bouwjaar onbekend");
+  const n=+p.adressen;if(n>0)d.push(n+(n>1?" adressen":" adres"));
+  if(p.status&&!/^pand in gebruik/i.test(p.status))d.push(p.status.toLowerCase());
+  return '<p class="pand"><b>Pand:</b> '+esc(d.join(" · "))+' <span class="m">(BAG)</span></p>';
+}
+function bagVorm(geom){
+  bagVormWeg();if(!geom)return;
+  BAG.vorm=L.geoJSON(geom,{pane:"rond",renderer:ROND.rend,interactive:false,style:{color:"#24507a",weight:2,fill:true,fillOpacity:.08,dashArray:null}}).addTo(map);
+}
+function bagVormWeg(){if(BAG.vorm){map.removeLayer(BAG.vorm);BAG.vorm=null;}}
+map.on("popupclose",()=>{if(!ROND.pandVorm)bagVormWeg();});
+// In een pop-up: bouwjaar en aantal adressen van het pand waar het meetpunt in zit
+function bagPopup(el,lat,lon,maxM){
+  if(!el)return;
+  bagPand(lat,lon,maxM).then(p=>{
+    if(!p||!el.isConnected||el.querySelector(".pand"))return;
+    const t=el.querySelector("table.kv");if(t)t.insertAdjacentHTML("afterend",bagTekst(p));
+    ROND.pandVorm=false;bagVorm(p.geom);
+  });
+}
+
 buildRows();fillSettings();styleAll();
 
 // ---------- link naar een plek of meetpunt: ?kaart=lat,lon,zoom of ?punt=nummer ----------
 (function(){
   let p;try{p=new URLSearchParams(location.search);}catch(e){return;}
-  const k=p.get("kaart"),pt=(p.get("punt")||"").trim();
+  const k=p.get("kaart"),pt=(p.get("punt")||"").trim(),van=(p.get("van")||"").trim();
+  if(GB&&/^gemeente\/[a-z0-9-]+\/([a-z0-9-]+\/)?$/.test(van)){
+    const d=van.split("/");const gi=GB.g.findIndex(g=>g[0]===d[1]);let x=null;
+    if(gi>=0&&!d[2])x=gebGem(gi);
+    else if(gi>=0&&gi===GB.a&&GB.b){const bi=GB.b.findIndex(b=>b&&b[0]===d[2]);x=gebBuurt(bi);}
+    if(x){const t=document.getElementById("terug");
+      t.innerHTML='<a href="'+esc(x.u)+'">← Terug naar '+esc(x.n)+'</a><button type="button" aria-label="Verbergen">×</button>';
+      t.hidden=false;document.body.classList.add("terug");
+      t.querySelector("button").addEventListener("click",()=>{t.hidden=true;document.body.classList.remove("terug");});
+      L.DomEvent.disableClickPropagation(t);}
+  }
   if(k){const a=k.split(",").map(Number);
     if(a.length>=2&&a[0]>50&&a[0]<54&&a[1]>3&&a[1]<8)map.setView([a[0],a[1]],Math.max(7,Math.min(18,Math.round(a[2])||14)));}
   if(!pt)return;

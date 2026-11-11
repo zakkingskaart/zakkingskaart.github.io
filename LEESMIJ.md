@@ -269,3 +269,28 @@ De kaart is bedoeld voor iedereen, niet alleen voor vakmensen. Daarom:
 - "blok van 100 m" in plaats van "vak", en "Copernicus, het aardobservatieprogramma van de EU" in plaats van "EGMS-release".
 
 Het Over-venster heeft een kopje "Begrippen". De verplichte bronvermelding van Copernicus staat er nog volledig bij.
+
+## Bouwjaar en aantal adressen per pand (BAG)
+
+Klik je op een meetbout of peilmerk, dan zoekt de kaart in de BAG, het landelijke register van gebouwen en adressen, welk pand daar staat. De pop-up toont dan bijvoorbeeld "Pand: gebouwd in 1905 · 12 adressen", en de omtrek van het pand licht op op de kaart. Dat gebeurt ook in "In de buurt" na het zoeken op een adres of een rechtsklik.
+
+- **Hoe het werkt:** de kaart vraagt het pand op bij `api.pdok.nl/kadaster/bag/ogc/v2/collections/pand/items` (publiek domein), op het moment van klikken.
+  - Er komt niets bij in de wekelijkse run.
+  - Een meetbout zit in de gevel, dus ook een pand tot 6 meter verderop telt mee. Bij een rechtsklik is dat 2 meter, bij een gezocht adres 3 meter.
+  - Gesloopte en nooit gebouwde panden worden overgeslagen.
+- **Als PDOK niet reageert,** verschijnt de regel gewoon niet.
+- **Privacy:** PDOK ziet de aangeklikte plek. Dat staat in de privacytekst.
+
+## Van de kaart naar de pagina's en terug
+
+- **In elke pop-up** van een meetbout of peilmerk staat "Cijfers voor <buurt of gemeente> →".
+  - Bij een meetbout gaat de link naar de Amsterdamse buurt. Heeft die buurt geen eigen pagina, dan naar Amsterdam.
+  - Bij een peilmerk gaat de link naar de gemeente.
+  - Dat wordt vooraf in de wekelijkse run bepaald: `meta.gebied` in `data.json` en `g` in `nap.json`.
+- **"In de buurt"** heeft dezelfde link. Welke buurt of gemeente dat is, bepaalt de kaart zo:
+  1. de buurt van de dichtstbijzijnde meetbout (binnen 120 m);
+  2. anders de gemeente uit het zoekresultaat;
+  3. anders, na een rechtsklik, het dichtstbijzijnde adres bij de PDOK Locatieserver.
+- **Zoeken op een plaats of gemeente** geeft een melding met "Cijfers voor gemeente … →".
+- **"Bekijk … op de kaart"** op een pagina geeft `&van=gemeente/<naam>/` mee. De kaart toont dan "← Terug naar …". Alleen bestaande pagina's worden geaccepteerd.
+- **Zoekvelden:** het overzicht van gemeenten en de buurtentabel van Amsterdam filteren al typend.
