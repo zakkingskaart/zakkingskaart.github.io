@@ -149,6 +149,21 @@ GitHub Pages en de domeinregistrar geven geen bezoekersaantallen. Daarom telt de
 
 De teller gebruikt de feedback-URL (`ZK_FEEDBACK_URL`). Wil je hem uitzetten, gebruik dan `--zonder-teller`. Deel de statistiekenlink niet: wie hem heeft, kan de cijfers zien.
 
+**Je eigen bezoeken niet meetellen:** open één keer `https://zakkingskaart.nl/?niettellen=1` in elke browser die je zelf gebruikt (ook op je telefoon). De browser onthoudt dat, en de site meldt het in beeld. Terugzetten kan met `?niettellen=0`. In een privévenster werkt het niet, want daar wordt niets onthouden. Bezoeken aan de pagina's per gemeente en buurt worden niet geteld; die zie je in Google Search Console.
+
+## Pagina's per gemeente en per Amsterdamse buurt
+
+In website-modus maakt het script naast de kaart een pagina per gemeente en per Amsterdamse buurt. Die zijn vooral bedoeld om beter gevonden te worden in Google:
+- `/gemeenten/`: overzicht van alle gemeenten, per provincie, met het aantal NAP-peilmerken, hoeveel daarvan een recente snelheid hebben, en de mediaan.
+- `/gemeente/<naam>/`: per gemeente kerncijfers, de verdeling over de kleuren, een korte uitleg en een knop die de kaart op die gemeente opent.
+- `/gemeente/amsterdam/<buurt>/`: per Amsterdamse buurt de meetbouten (verdeling, mediaan, per straat) en de peilmerken in die buurt. Alleen buurten met minstens 3 meetbouten of 1 peilmerk met een recente snelheid krijgen een pagina.
+
+Alle pagina's staan in `sitemap.xml`, en de kaart linkt ernaar ("Per gemeente" in de legenda). De teksten zijn beschrijvend, met dezelfde disclaimer en bronvermelding onderaan.
+
+**Grenzen:** gemeenten komen van het Kadaster (Bestuurlijke Gebieden, CC BY 4.0; de bron staat op elke pagina), Amsterdamse buurten en wijken van de gemeente (Kernregistratie gebieden, CC0). Ze worden vereenvoudigd tot ongeveer 10 meter nauwkeurig, bewaard in de cache (`gemeenten.json.gz`, `ams_buurten.json.gz`) en eens per half jaar opnieuw opgehaald (`--gebieden-ververs`). Lukt ophalen niet, dan gebruikt het script de oude versie; zonder cache slaat het de pagina's over en publiceert het de kaart gewoon. Uitzetten kan met `--zonder-gebieden`.
+
+**Links naar de kaart:** `?kaart=lat,lon,zoom` opent de kaart op een plek, en `?punt=<nummer>` opent een meetbout of peilmerk. Elke pop-up heeft "Link naar dit punt", dat zo'n link kopieert.
+
 ## Vindbaar in Google
 
 De site heeft een paginatitel, een beschrijving, een `robots.txt` en een `sitemap.xml`. Om Google de site te laten kennen en zoekstatistieken te zien:
