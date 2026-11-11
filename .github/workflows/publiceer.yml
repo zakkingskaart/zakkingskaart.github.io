@@ -64,6 +64,7 @@ jobs:
           ZK_FEEDBACK_URL: ${{ secrets.ZK_FEEDBACK_URL }}
           ZK_SITE_URL: ${{ vars.ZK_SITE_URL }}                       # leeg = https://zakkingskaart.github.io/
           ZK_GOOGLE_VERIFICATIE: ${{ vars.ZK_GOOGLE_VERIFICATIE }}   # code uit Google Search Console
+          ZK_VERBERGEN: ${{ vars.ZK_VERBERGEN }}                     # adressen/nummers die op verzoek niet op de kaart komen
           VERNIEUW: ${{ inputs.vernieuw }}
           FORCEER: ${{ inputs.forceer }}
         run: |
