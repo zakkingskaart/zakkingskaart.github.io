@@ -1645,7 +1645,7 @@ def _verdeling(t, rood, geel, met_stab):
     rij = {"rood": ("Zakt snel", f"{_nl(rood)} mm per jaar of meer"),
            "geel": ("Zakt matig", f"{_nl(geel)} tot {_nl(rood)} mm per jaar"),
            "groen": ("Zakt nauwelijks", f"minder dan {_nl(geel)} mm per jaar"),
-           "stab": ("Gestabiliseerd", "eerst minstens 1,5, nu minder dan 0,5 mm per jaar"),
+           "stab": ("Gestabiliseerd", "zakte eerst flink (1,5 mm per jaar of meer), nu bijna niet meer (minder dan 0,5)"),
            "oud": ("Geen recente of te weinig metingen", "")}
     klassen = [k for k in GEBIED_KLASSEN if met_stab or k != "stab"]
     balk = "".join(f'<i style="width:{100.0 * t.k[k] / t.n:.2f}%;background:{GEBIED_KLEUR[k]}" title="{rij[k][0]}"></i>'
@@ -1655,7 +1655,7 @@ def _verdeling(t, rood, geel, met_stab):
         f'{rij[k][0]}</td><td>{rij[k][1]}</td><td class="n">{fmt_int(t.k[k])}</td>'
         f'<td class="n">{_nl(100.0 * t.k[k] / t.n, 0) if t.n else "–"}%</td></tr>' for k in klassen)
     return (f'<div class="balk" role="img" aria-label="Verdeling over de kleuren">{balk}</div>'
-            f'<div class="tabel"><table><thead><tr><th>Kleur op de kaart</th><th>Recente snelheid</th>'
+            f'<div class="tabel"><table><thead><tr><th>Kleur op de kaart</th><th>Snelheid de laatste jaren</th>'
             f'<th class="n">Aantal</th><th class="n">Aandeel</th></tr></thead><tbody>{rijen}</tbody></table></div>')
 
 
@@ -1755,17 +1755,18 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         if t is None:
             return ""
         if not t.n:
-            return (f"<h2>Bodembeweging gemeten door satellieten</h2><p>Voor {waar} zijn geen satellietmetingen "
-                    f"(EGMS) beschikbaar.</p>")
-        return (f"<h2>Bodembeweging gemeten door satellieten</h2>"
-                f"<p>Satellieten van het Europese Copernicus-programma meten in {waar} {fmt_int(t.n)} vakken van 100 bij 100 meter. "
-                f"De middelste waarde (mediaan) van de zakking is {_nl(t.mediaan, 1)} mm per jaar "
-                f"(periode {_h(release.replace('-', '–'))}).</p>"
+            return (f"<h2>Bodemdaling gemeten vanuit de ruimte</h2><p>Voor {waar} zijn geen satellietmetingen "
+                    f"beschikbaar.</p>")
+        return (f"<h2>Bodemdaling gemeten vanuit de ruimte</h2>"
+                f"<p>Satellieten van de Europese Unie meten de hoogte van de grond. In {waar} gaat het om {fmt_int(t.n)} "
+                f"blokken van 100 bij 100 meter. Doorsnee zakt de grond daar {_nl(t.mediaan, 1)} mm per jaar "
+                f"(gemeten {_h(release.replace('-', '–'))}).</p>"
                 + _verdeling(t, args.rood, args.geel, False).replace("Geen recente of te weinig metingen", "Onzekere meting")
-                .replace("<th>Recente snelheid</th>", f"<th>Snelheid {_h(release.replace('-', '–'))}</th>")
-                + "<p class=\"uitleg\">Een satelliet meet de hoogte van het aardoppervlak en van bebouwing en infrastructuur "
-                  "samen; per vak van 100 meter is dat een gemiddelde. Een gebouw op palen kan stil staan terwijl de grond "
-                  "eromheen zakt, en andersom. Bron: " + _h(EGMS_BRON) + ".</p>")
+                .replace("<th>Snelheid de laatste jaren</th>", f"<th>Snelheid {_h(release.replace('-', '–'))}</th>")
+                + "<p class=\"uitleg\">Een satelliet meet grond, straten en gebouwen samen; per blok van 100 meter is dat "
+                  "een gemiddelde. Een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Alleen waar "
+                  "iets het radarsignaal goed terugkaatst (daken, wegen) is gemeten; in weilanden en op water niet. "
+                  "Bron: Copernicus, het aardobservatieprogramma van de EU (" + _h(EGMS_BRON) + ").</p>")
 
     def schrijf(rel, html):
         p = os.path.join(out_dir, rel, "index.html")
@@ -1775,18 +1776,19 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
 
     def napzin(t, waar):
         if not t.n:
-            return f"<p>In {waar} liggen geen NAP-peilmerken van Rijkswaterstaat.</p>"
-        s = (f"<p>In {waar} liggen {fmt_int(t.n)} NAP-peilmerken van Rijkswaterstaat. "
-             f"Van {fmt_int(t.met_recent)} daarvan is een recente zakkingssnelheid bekend")
+            return f"<p>In {waar} liggen geen peilmerken van Rijkswaterstaat.</p>"
+        s = (f"<p>In {waar} liggen {fmt_int(t.n)} peilmerken van Rijkswaterstaat. "
+             f"Van {fmt_int(t.met_recent)} daarvan is bekend hoe snel ze de laatste jaren zakken")
         if t.met_recent:
-            s += f"; de middelste waarde (mediaan) is {_nl(t.mediaan, 2)} mm per jaar"
+            s += f"; doorsnee is dat {_nl(t.mediaan, 2)} mm per jaar"
         return s + ".</p>"
 
-    uitleg_nap = ("<p class=\"uitleg\">Een NAP-peilmerk is een bronzen bout in een huis, brug of ander bouwwerk, waarvan "
-                  "Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De recente snelheid is berekend over de laatste "
-                  "metingen die minstens 8 jaar uit elkaar liggen. Peilmerken die meer dan 20 jaar niet zijn gemeten, of "
-                  "waarvan de reeks onzeker is, tellen als &lsquo;geen recente of te weinig metingen&rsquo;. Een peilmerk "
-                  "beweegt mee met de bodem van de hele omgeving; het zegt iets over de plek, niet per se over één gebouw.</p>")
+    uitleg_nap = ("<p class=\"uitleg\">Een peilmerk (NAP-peilmerk) is een metalen boutje in een huis, brug of ander bouwwerk. "
+                  "Rijkswaterstaat meet eens per 5 tot 15 jaar hoe hoog het ligt. De snelheid van de laatste jaren is berekend "
+                  "uit metingen die minstens 8 jaar uit elkaar liggen. Peilmerken die meer dan 20 jaar niet zijn gemeten, of "
+                  "waarvan de metingen een onverklaarbare sprong maken, tellen als &lsquo;geen recente of te weinig metingen&rsquo;. "
+                  "Een peilmerk zakt mee met de grond van de hele omgeving; het zegt iets over de plek, niet per se over één gebouw. "
+                  "<b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>")
 
     # --- pagina per gemeente ---
     per_prov = {}
@@ -1800,14 +1802,14 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         lat, lon = (bb[1] + bb[3]) / 2, (bb[0] + bb[2]) / 2
         delen = [f'<h1>Zakking in {_h(naam)}</h1>',
                  f'<p class="lead">Hoe snel zakken gebouwen en andere bouwwerken in {_h(naam)}? Deze pagina vat de '
-                 f'openbare NAP-metingen van Rijkswaterstaat samen'
+                 f'openbare metingen van Rijkswaterstaat samen'
                  + (", en de meetbouten van de gemeente Amsterdam per buurt" if gi == ams and buurten else "") + ".</p>",
-                 _cijfers([(fmt_int(t.n), "NAP-peilmerken"),
+                 _cijfers([(fmt_int(t.n), "peilmerken"),
                            (fmt_int(t.met_recent), "met een recente snelheid"),
-                           (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "mediaan recente snelheid"),
+                           (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
                            (str(t.laatste or "–"), "laatste meting")]),
                  f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb))}">Bekijk {_h(naam)} op de kaart</a>',
-                 "<h2>NAP-peilmerken</h2>", napzin(t, _h(naam))]
+                 "<h2>Peilmerken van Rijkswaterstaat</h2>", napzin(t, _h(naam))]
         if t.n:
             delen.append(_verdeling(t, args.rood, args.geel, False))
         delen.append(uitleg_nap)
@@ -1816,7 +1818,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         if gi == ams and buurten:
             delen.append("<h2>Meetbouten per buurt</h2>")
             delen.append(f"<p>In Amsterdam meet de gemeente daarnaast de hoogte van {fmt_int(a_tel.n)} meetbouten in gevels. "
-                         f"Van {fmt_int(a_tel.met_recent)} daarvan is een recente snelheid bekend; de mediaan is "
+                         f"Van {fmt_int(a_tel.met_recent)} daarvan is een recente snelheid bekend; doorsnee is dat "
                          f"{_nl(a_tel.mediaan, 2)} mm per jaar.</p>")
             delen.append(_verdeling(a_tel, args.rood, args.geel, True))
             rijen = []
@@ -1827,7 +1829,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                              f'<td>{_h(buurten[bi].get("wijk") or "")}</td><td class="n">{fmt_int(bt.n)}</td>'
                              f'<td class="n">{_nl(bt.mediaan, 2)}</td><td class="n">{bt.laatste or "–"}</td></tr>')
             delen.append('<div class="tabel"><table><thead><tr><th>Buurt</th><th>Wijk</th><th class="n">Meetbouten</th>'
-                         '<th class="n">Mediaan (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
+                         '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
                          + "".join(rijen) + "</tbody></table></div>")
         andere = [i for i in per_prov.get(g.get("prov") or "", []) if i != gi]
         if g.get("prov") and andere:
@@ -1837,7 +1839,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         delen.append('<p><a href="../../gemeenten/">Alle gemeenten</a></p>')
         besch = (f"Openbare NAP-metingen van Rijkswaterstaat in {naam}: {fmt_int(t.n)} peilmerken, waarvan "
                  f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid"
-                 + (f" (mediaan {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
+                 + (f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
         schrijf(f"gemeente/{slugs[gi]}", _pagina(
             f"Zakking en bodemdaling in {naam} | Zakkingskaart", besch, f"{site_url}gemeente/{slugs[gi]}/", root,
             root + root_css, [("Zakkingskaart", root), ("Gemeenten", "../../gemeenten/"), (naam, None)],
@@ -1856,18 +1858,18 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             waar = f"{_h(b['naam'])}" + (f" ({_h(b['wijk'])})" if b.get("wijk") else "")
             delen = [f"<h1>Zakking in {_h(b['naam'])}, Amsterdam</h1>",
                      f'<p class="lead">Hoe snel zakken de gevels in de buurt {waar}? Deze pagina vat de openbare '
-                     f'meetbouten van de gemeente Amsterdam en de NAP-peilmerken van Rijkswaterstaat samen.</p>',
+                     f'meetbouten van de gemeente Amsterdam en de peilmerken van Rijkswaterstaat samen.</p>',
                      _cijfers([(fmt_int(t.n), "meetbouten"),
                                (fmt_int(t.met_recent), "met een recente snelheid"),
                                (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""),
-                                "mediaan recente snelheid"),
+                                "doorsnee snelheid"),
                                (str(t.laatste or "–"), "laatste meting")]),
                      f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 14, 16))}">Bekijk deze buurt op de kaart</a>',
                      "<h2>Meetbouten</h2>"]
             if t.n:
                 delen.append(f"<p>In deze buurt meet de gemeente de hoogte van {fmt_int(t.n)} meetbouten in gevels. "
                              f"Van {fmt_int(t.met_recent)} daarvan is een recente zakkingssnelheid bekend"
-                             + (f"; de mediaan is {_nl(t.mediaan, 2)} mm per jaar" if t.met_recent else "") + ".</p>")
+                             + (f"; doorsnee is dat {_nl(t.mediaan, 2)} mm per jaar" if t.met_recent else "") + ".</p>")
                 delen.append(_verdeling(t, args.rood, args.geel, True))
                 straten = []
                 for sl, st in b_straat[bi].items():
@@ -1878,7 +1880,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                 if straten:
                     delen.append("<h2>Per straat</h2>")
                     delen.append('<div class="tabel"><table><thead><tr><th>Straat</th><th class="n">Meetbouten</th>'
-                                 '<th class="n">Met recente snelheid</th><th class="n">Mediaan (mm/jaar)</th>'
+                                 '<th class="n">Met recente snelheid</th><th class="n">Doorsnee (mm/jaar)</th>'
                                  '<th class="n">Laatste meting</th></tr></thead><tbody>' + "".join(
                                      f'<tr><td>{"<i>" + _h(s) + "</i>" if overig else _h(s)}</td><td class="n">{fmt_int(st.n)}</td>'
                                      f'<td class="n">{fmt_int(st.met_recent)}</td><td class="n">{_nl(st.mediaan, 2)}</td>'
@@ -1887,16 +1889,16 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             else:
                 delen.append("<p>In deze buurt staan geen meetbouten van de gemeente.</p>")
             delen.append("<p class=\"uitleg\">Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte "
-                         "meet. De recente snelheid is berekend over de laatste metingen die minstens 4 jaar uit elkaar liggen. "
+                         "meet. De recente snelheid is berekend uit metingen die minstens 4 jaar uit elkaar liggen. "
                          "Een meetbout zegt iets over die ene gevel; de kaart en deze pagina geven alleen de gemeten "
-                         "snelheden weer.</p>")
-            delen.append("<h2>NAP-peilmerken</h2>" + napzin(tn, "deze buurt"))
+                         "snelheden weer. <b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>")
+            delen.append("<h2>Peilmerken van Rijkswaterstaat</h2>" + napzin(tn, "deze buurt"))
             if b_egms:
                 delen.append(egms_blok(b_egms[bi], "deze buurt"))
             delen.append(f'<p><a href="../">Alle buurten in Amsterdam</a> · <a href="../../../gemeenten/">Alle gemeenten</a></p>')
             besch = (f"Openbare meetbouten van de gemeente Amsterdam in {b['naam']}: {fmt_int(t.n)} meetbouten, waarvan "
                      f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid"
-                     + (f" (mediaan {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
+                     + (f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
             schrijf(f"gemeente/{aslug}/{bslugs[bi]}", _pagina(
                 f"Zakking in {b['naam']}, Amsterdam | Zakkingskaart", besch,
                 f"{site_url}gemeente/{aslug}/{bslugs[bi]}/", root, root + root_css,
@@ -1907,14 +1909,15 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     root = "../"
     groepen = sorted(per_prov.items(), key=lambda kv: (kv[0] == "", kv[0].lower()))
     delen = ["<h1>Zakking per gemeente</h1>",
-             '<p class="lead">Per gemeente een samenvatting van de openbare NAP-metingen van Rijkswaterstaat: hoeveel '
-             'peilmerken er zijn, van hoeveel een recente zakkingssnelheid bekend is, en de middelste waarde (mediaan). '
+             '<p class="lead">Per gemeente een samenvatting van de openbare metingen van Rijkswaterstaat: hoeveel '
+             'peilmerken er zijn, van hoeveel bekend is hoe snel ze de laatste jaren zakken, en de doorsnee snelheid '
+             '(de middelste waarde: de helft zakt sneller, de helft langzamer). '
              'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.</p>']
     for prov, idxs in groepen:
         if prov:
             delen.append(f"<h2>{_h(prov)}</h2>")
         delen.append('<div class="tabel"><table><thead><tr><th>Gemeente</th><th class="n">Peilmerken</th>'
-                     '<th class="n">Met recente snelheid</th><th class="n">Mediaan (mm/jaar)</th></tr></thead><tbody>'
+                     '<th class="n">Met recente snelheid</th><th class="n">Doorsnee (mm/jaar)</th></tr></thead><tbody>'
                      + "".join(f'<tr><td><a href="../gemeente/{slugs[i]}/">{_h(gemeenten[i]["naam"])}</a></td>'
                                f'<td class="n">{fmt_int(g_tel[i].n)}</td><td class="n">{fmt_int(g_tel[i].met_recent)}</td>'
                                f'<td class="n">{_nl(g_tel[i].mediaan, 2)}</td></tr>'
@@ -2358,7 +2361,7 @@ def write_egms(out_dir, egms):
         out = []
         for (cx, cy), vs in dic.items():
             if len(vs) >= 3:
-                out.extend([round((cx + 0.5) * dx, 4), round((cy + 0.5) * dy, 4), int(_mediaan(vs)), len(vs)])
+                out.extend([round((cy + 0.5) * dy, 4), round((cx + 0.5) * dx, 4), int(_mediaan(vs)), len(vs)])
         return out
     ov = json.dumps({"r1": cellen(fijn, 0.015, 0.009), "r5": cellen(grof, 0.075, 0.045),
                      "d1": [0.015, 0.009], "d5": [0.075, 0.045], "tegel": EGMS_TEGEL,
@@ -2999,13 +3002,22 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <h3>Onafhankelijk initiatief</h3>
     <p>Zakkingskaart is een onafhankelijk, niet-commercieel initiatief. Het is geen website van een gemeente of van Rijkswaterstaat en wordt niet door hen gemaakt, gecontroleerd of goedgekeurd.</p>
     <h3>Wat de kaart laat zien</h3>
-    <p>De kaart laat zien hoe snel gebouwen in Nederland zakken. Voor heel Nederland gebruikt ze de NAP-peilmerken van Rijkswaterstaat; voor Amsterdam daarnaast de veel fijnmazigere meetbouten van de gemeente.</p>
+    <p>De kaart laat zien hoe snel gebouwen en de grond in Nederland zakken. Ze gebruikt drie openbare bronnen: de peilmerken van Rijkswaterstaat (heel Nederland), de meetbouten van de gemeente Amsterdam (veel meer meetpunten, alleen in Amsterdam) en satellietmetingen van de Europese Unie (heel Nederland).</p>
+    <h3>Begrippen</h3>
+    <ul>
+      <li><b>mm per jaar:</b> hoeveel millimeter een punt per jaar lager komt te liggen. 1 mm per jaar is 1 centimeter in 10 jaar.</li>
+      <li><b>Meetbout:</b> een boutje in de gevel van een gebouw. De gemeente Amsterdam meet regelmatig hoe hoog het zit.</li>
+      <li><b>Peilmerk:</b> een metalen boutje in een gebouw of brug, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De hoogte wordt gemeten ten opzichte van het NAP (Normaal Amsterdams Peil), de standaardhoogte van Nederland.</li>
+      <li><b>Satellietmeting:</b> satellieten meten met radar de hoogte van grond, straten en gebouwen samen, per blok van 100 bij 100 meter.</li>
+      <li><b>Doorsnee (of doorgaans):</b> de middelste waarde van een groep meetpunten: de helft zakt sneller, de helft langzamer. Zo bepaalt één uitschieter niet het beeld.</li>
+      <li><b>Laatste jaren:</b> de snelheid berekend uit de laatste meting en een meting van minstens 4 jaar eerder (bij peilmerken minstens 8 jaar).</li>
+    </ul>
     <h3>Amsterdam: meetbouten</h3>
     <p>In Amsterdam gebruikt de kaart de openbare meetboutgegevens van de gemeente en wordt ze wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
-    <h3>Heel Nederland: NAP-peilmerken</h3>
-    <p>Een NAP-peilmerk is een bronzen bout in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de mediaan van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk beweegt mee met de bodemdaling van de hele omgeving; het zegt dus iets over de plek, niet per se over dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de reeks een onverklaarde sprong bevat, zijn grijs.</p>
-    <h3>Heel Nederland: bodembeweging gemeten door satellieten</h3>
-    <p>De laag &ldquo;Bodembeweging (satelliet)&rdquo; komt van de European Ground Motion Service (EGMS) van het Europese Copernicus-programma. Radarsatellieten meten elke paar dagen de hoogte van het aardoppervlak en van bebouwing en infrastructuur; EGMS rekent dat om naar een gemiddelde verticale snelheid per vak van 100 bij 100 meter, over een periode van vijf jaar. Uitgezoomd zie je de mediaan per vak van ongeveer 5 of 1 kilometer. Anders dan een meetbout of peilmerk meet een vak niet één gebouw, maar de grond en de bebouwing samen: een gebouw op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Vakken met een grote meetonzekerheid zijn grijs. De laag staat standaard uit.</p>
+    <h3>Heel Nederland: peilmerken van Rijkswaterstaat</h3>
+    <p>Een peilmerk (officieel: NAP-peilmerk) is een metalen boutje in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de doorsnee van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk zakt mee met de grond van de hele omgeving; het zegt dus iets over de plek, niet per se over dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de metingen een onverklaarbare sprong maken, zijn grijs.</p>
+    <h3>Heel Nederland: bodemdaling gemeten vanuit de ruimte</h3>
+    <p>De laag &ldquo;Bodemdaling gemeten vanuit de ruimte&rdquo; komt van Copernicus, het aardobservatieprogramma van de Europese Unie (de dienst heet European Ground Motion Service, EGMS). Satellieten meten met radar elke paar dagen de hoogte van grond, straten en gebouwen. Daaruit is per blok van 100 bij 100 meter berekend hoeveel de grond per jaar zakte of steeg, over een periode van vijf jaar. Uitgezoomd zie je de doorsnee per blok van ongeveer 5 of 1 kilometer. Je ziet alleen blokken waar iets het radarsignaal goed terugkaatst, zoals daken, wegen en bruggen; in weilanden, akkers en op water is niets gemeten. Anders dan een meetbout of peilmerk meet een blok niet één gebouw, maar alles samen: een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Blokken met een onzekere meting zijn grijs. De laag staat standaard uit.</p>
     <h3>Wat de kleuren betekenen</h3>
     <p>De kleur hangt alleen af van hoe snel een meetpunt de laatste jaren is gezakt: groen bij minder dan 1 mm per jaar, geel bij 1 tot 2 mm per jaar, rood bij 2 mm per jaar of meer. Gestabiliseerd: eerst minstens 1,5 en nu minder dan 0,5 mm per jaar. Grijs: geen recente of te weinig metingen. De grenzen van 1 en 2 mm per jaar zijn ook klassegrenzen op de meetboutenkaart van de gemeente Amsterdam, die eveneens van groen via geel naar rood kleurt. De kleuren beschrijven alleen de gemeten snelheid; ze zeggen niet of iets goed of slecht is. Onder &ldquo;Grenzen aanpassen&rdquo; kun je zelf andere grenzen kiezen.</p>
     <h3>Disclaimer</h3>
@@ -3014,7 +3026,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <p>Deze site beheert de meetgegevens niet en kan ze niet aanpassen. Heb je een vraag over een meting, of denk je dat er iets niet klopt? Neem dan contact op met de bron:</p>
     <ul>
       <li><b>Meetbouten (Amsterdam):</b> gemeente Amsterdam, Basisinformatie, <a href="mailto:gebruik.basisinformatie@amsterdam.nl">gebruik.basisinformatie@amsterdam.nl</a> (contactadres bij de dataset <a href="https://data.overheid.nl/dataset/m6avdgklu2czqa" target="_blank" rel="noopener">Kernregistratie Meetbouten</a>).</li>
-      <li><b>NAP-peilmerken:</b> Rijkswaterstaat, <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">contactformulier Servicedesk Data</a>.</li>
+      <li><b>Peilmerken:</b> Rijkswaterstaat, <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">contactformulier Servicedesk Data</a>.</li>
     </ul>
     <p>Wat de bron aanpast of verwijdert, verdwijnt bij de volgende automatische update ook van deze kaart. De knop &ldquo;Feedback&rdquo; is voor opmerkingen over de website zelf.</p>
     <h3>Privacy</h3>
@@ -3032,14 +3044,17 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>__GEBIEDLINK__</p>
   <div class="body">
     <div class="rows" id="rows"></div>
-    <p class="note" id="viewnote">Aantallen: meetbouten in beeld.</p>
-    <p class="note"><b>Amsterdam:</b> lijnen en punten zijn meetbouten van de gemeente (per gevel; lijn = straatdeel, mediaan van de bouten). <b>Heel Nederland:</b> open rondjes zijn NAP-peilmerken. Klik voor details.</p>
+    <p class="note" id="viewnote">De getallen tellen de meetbouten die je nu op de kaart ziet.</p>
+    <p class="note"><b>Amsterdam:</b> een stip is één meetbout in een gevel; een lijn is een stuk straat (de doorsnee van de meetbouten daar). <b>Heel Nederland:</b> open rondjes zijn peilmerken van Rijkswaterstaat. Klik op iets voor details. <b>In de buurt:</b> zoek een adres, of klik met rechts (op een telefoon: lang indrukken) ergens op de kaart.</p>
+    <div class="naprow" id="boutrow">
+      <label class="row"><input type="checkbox" id="cBout"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#e6a700,#d7301f);border-radius:2px;height:4px"></i><span class="lbl">Meetbouten (Amsterdam)<small>Meetpunten van de gemeente in gevels van gebouwen</small></span><span class="cnt" id="cnt-bout">–</span></label>
+    </div>
     <div class="naprow" id="naprow" hidden>
-      <label class="row"><input type="checkbox" id="cNap"><i class="sw ring"></i><span class="lbl">NAP-peilmerken<small>Rijkswaterstaat, heel Nederland · eens per 5–15 jaar gemeten</small></span><span class="cnt" id="cnt-nap">–</span></label>
+      <label class="row"><input type="checkbox" id="cNap"><i class="sw ring"></i><span class="lbl">Peilmerken (heel Nederland)<small>Meetpunten van Rijkswaterstaat in gebouwen en bruggen · eens per 5 tot 15 jaar gemeten</small></span><span class="cnt" id="cnt-nap">–</span></label>
       <p class="note" id="napnote"></p>
     </div>
     <div class="naprow" id="egrow" hidden>
-      <label class="row"><input type="checkbox" id="cEgms"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#e6a700,#d7301f);opacity:.6;border-radius:2px"></i><span class="lbl">Bodembeweging (satelliet)<small>Copernicus EGMS · vakken van 100 m · grond en bebouwing samen</small></span></label>
+      <label class="row"><input type="checkbox" id="cEgms"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#e6a700,#d7301f);opacity:.6;border-radius:2px"></i><span class="lbl">Bodemdaling gemeten vanuit de ruimte<small>Satellietmetingen van de EU · per blok van 100 × 100 m · grond, straten en gebouwen samen</small></span></label>
       <p class="note" id="egnote"></p>
     </div>
     <details id="settings">
@@ -3131,7 +3146,7 @@ const KL=["rood","geel","groen","stab","oud"];
 const COL={rood:"#d7301f",geel:"#e6a700",groen:"#1a9850",stab:"#1a9850",oud:"#9a9a9a"};
 const RING="#08306b";
 const DEF={red:M.defaults.red,yellow:M.defaults.yellow,stabEarly:M.defaults.stabEarly,stabNow:M.defaults.stabNow,
-  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{rood:true,geel:true,groen:true,stab:true,oud:true},base:"pdokgrijs",showNap:true,showEgms:false};
+  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{rood:true,geel:true,groen:true,stab:true,oud:true},base:"pdokgrijs",showNap:true,showEgms:false,showBout:true};
 let S=JSON.parse(JSON.stringify(DEF));
 try{const s=JSON.parse(localStorage.getItem("zakkingskaart.v1")||"null");if(s){S=Object.assign(S,s);S.show=Object.assign({},DEF.show,s.show||{});if(!s.napKeuze)S.showNap=DEF.showNap;}}catch(e){}
 function save(){try{localStorage.setItem("zakkingskaart.v1",JSON.stringify(S));}catch(e){}}
@@ -3144,8 +3159,8 @@ function label(c){
   if(c==="rood")return["Zakt snel","vanaf "+nf(S.red,1)+" mm/jaar"];
   if(c==="geel")return["Zakt matig",nf(S.yellow,1)+" tot "+nf(S.red,1)+" mm/jaar"];
   if(c==="groen")return["Zakt nauwelijks","minder dan "+nf(S.yellow,1)+" mm/jaar"];
-  if(c==="stab")return["Gestabiliseerd","eerder ≥ "+nf(S.stabEarly,1)+", nu < "+nf(S.stabNow,1)+" mm/jaar"];
-  return["Geen recente data","laatste meting > "+S.staleYears+" jaar oud, vervallen of te kort"];
+  if(c==="stab")return["Gestabiliseerd","zakte eerst flink, nu bijna niet meer"];
+  return["Geen recente metingen","laatste meting ouder dan "+S.staleYears+" jaar, te weinig metingen of meetpunt vervallen"];
 }
 function cls(b){
   const r=b[I.recent];
@@ -3181,7 +3196,7 @@ for(const k in bases){const t=bases[k];if(!t.on||k==="geen")continue;let ok=0,ba
   t.on("tileerror",()=>{bad++;if(!shown&&bad>=6&&ok===0){shown=true;const el=document.getElementById("msg");
     el.textContent="De achtergrondkaart laadt niet. Kies linksonder een andere achtergrond; de meetbouten werken ook zonder.";el.hidden=false;setTimeout(()=>el.hidden=true,8000);}});}
 L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
-map.attributionControl.addAttribution("Meetbouten: Gemeente Amsterdam"+(M.napUrl?" · NAP: Rijkswaterstaat":"")+(M.egmsUrl?" · Satelliet: Copernicus EGMS":"")+" · Geen oordeel of advies");
+map.attributionControl.addAttribution("Meetbouten: Gemeente Amsterdam"+(M.napUrl?" · Peilmerken: Rijkswaterstaat":"")+(M.egmsUrl?" · Satelliet: Copernicus (EU)":"")+" · Geen oordeel of advies");
 
 const lineLayer=L.layerGroup().addTo(map), dotLayer=L.layerGroup().addTo(map);
 const inLine=new Uint8Array(B.length);
@@ -3223,13 +3238,13 @@ function styleAll(){
   C=B.map(cls);GC=G.map((g,gi)=>groupClass(gi));
   const sz=sizes();let added=false;
   for(const pl of lines){
-    const c=GC[pl._zkG][0],vis=!!S.show[c];
+    const c=GC[pl._zkG][0],vis=S.showBout!==false&&!!S.show[c];
     pl.setStyle({color:COL[c],weight:sz.w,opacity:c==="oud"?.5:.9,dashArray:c==="stab"?(sz.w*0.3)+" "+(sz.w*1.6):null});
     if(vis&&!pl._zkVis){lineLayer.addLayer(pl);pl._zkVis=true;added=true;}
     else if(!vis&&pl._zkVis){lineLayer.removeLayer(pl);pl._zkVis=false;}
   }
   for(const m of dots){
-    const i=m._zkI,c=C[i],vis=!!S.show[c]&&(S.showDots||!inLine[i]);
+    const i=m._zkI,c=C[i],vis=S.showBout!==false&&!!S.show[c]&&(S.showDots||!inLine[i]);
     const st=c==="stab";
     m.setStyle({radius:st?sz.r+0.5:sz.r,fillColor:COL[c],color:st?RING:"#ffffff",weight:st?Math.max(1.2,sz.sw+0.6):sz.sw,stroke:st||sz.sw>0,fillOpacity:c==="oud"?.75:1});
     if(vis&&!m._zkVis){dotLayer.addLayer(m);m._zkVis=true;}
@@ -3261,7 +3276,10 @@ function counts(){
   const bb=map.getBounds();const n={rood:0,geel:0,groen:0,stab:0,oud:0};
   for(let i=0;i<B.length;i++){const b=B[i];if(bb.contains([b[I.lat],b[I.lon]]))n[C[i]]++;}
   for(const k of KL){const el=document.getElementById("cnt-"+k);if(el)el.textContent=n[k].toLocaleString("nl-NL");}
+  const tb=document.getElementById("cnt-bout");if(tb)tb.textContent=KL.reduce((a,k)=>a+n[k],0).toLocaleString("nl-NL");
 }
+const boutCb=document.getElementById("cBout");boutCb.checked=S.showBout!==false;
+boutCb.addEventListener("change",()=>{S.showBout=boutCb.checked;save();styleAll();});
 const fld={sRed:"red",sYellow:"yellow",sStabE:"stabEarly",sStabN:"stabNow",sStale:"staleYears"};
 function fillSettings(){
   for(const id in fld)document.getElementById(id).value=S[fld[id]];
@@ -3277,16 +3295,16 @@ for(const id in fld)document.getElementById(id).addEventListener("change",e=>{
 });
 document.getElementById("cStale").addEventListener("change",e=>{S.colorStale=e.target.checked;save();styleAll();});
 document.getElementById("cDots").addEventListener("change",e=>{S.showDots=e.target.checked;save();styleAll();});
-document.getElementById("reset").addEventListener("click",()=>{const base=S.base,nap=S.showNap,nk=S.napKeuze;S=JSON.parse(JSON.stringify(DEF));S.base=base;S.showNap=nap;if(nk)S.napKeuze=true;save();fillSettings();buildRows();styleAll();});
+document.getElementById("reset").addEventListener("click",()=>{const base=S.base,nap=S.showNap,nk=S.napKeuze;S=JSON.parse(JSON.stringify(DEF));S.base=base;S.showNap=nap;boutCb.checked=true;if(nk)S.napKeuze=true;save();fillSettings();buildRows();styleAll();});
 const legend=document.getElementById("legend"),tg=document.getElementById("toggle");
 tg.addEventListener("click",()=>{const c=legend.classList.toggle("collapsed");tg.textContent=c?"+":"–";tg.setAttribute("aria-expanded",String(!c));});
 if(window.innerWidth<640){legend.classList.add("collapsed");tg.textContent="+";tg.setAttribute("aria-expanded","false");}
 L.DomEvent.disableClickPropagation(legend);L.DomEvent.disableScrollPropagation(legend);
 L.DomEvent.disableClickPropagation(document.getElementById("search"));
-document.getElementById("src").innerHTML=(M.napUrl?"Bronnen: Rijkswaterstaat, NAP-peilmerken (heel Nederland, CC0) en ":"Bron: ")+"Gemeente Amsterdam, meetbouten (api.data.amsterdam.nl), opgehaald "+fmtDate(M.generated)+". "+
-  M.count.toLocaleString("nl-NL")+" meetbouten, waarvan "+M.withSeries.toLocaleString("nl-NL")+" met een meetreeks van minstens "+nf(M.minSpan,0)+" jaar. "+
-  "Snelheid = verschil tussen de laatste meting en de meest recente meting die minstens "+nf(M.minSpan,0)+" jaar eerder ligt. "+
-  (M.egmsUrl?"Satellietlaag: Copernicus EGMS, release "+esc(String(M.egmsRelease||"").replace("-","–"))+". ":"")+
+document.getElementById("src").innerHTML="Gegevens van "+(M.napUrl?"Rijkswaterstaat (peilmerken), ":"")+"de gemeente Amsterdam (meetbouten, bijgewerkt "+fmtDate(M.generated)+")"+
+  (M.egmsUrl?" en Copernicus, het aardobservatieprogramma van de EU (satelliet, gemeten "+esc(String(M.egmsRelease||"").replace("-","–"))+")":"")+". "+
+  M.count.toLocaleString("nl-NL")+" meetbouten, waarvan "+M.withSeries.toLocaleString("nl-NL")+" met metingen over minstens "+nf(M.minSpan,0)+" jaar. "+
+  "Hoe snel een punt zakt, is berekend uit de laatste meting en een meting van minstens "+nf(M.minSpan,0)+" jaar eerder. "+
   "Weergave van openbare meetgegevens, zonder oordeel of advies."+(M.proef?" <b>Proefrun: onvolledige data.</b>":"");
 
 // ---------- popups ----------
@@ -3319,20 +3337,20 @@ function openBout(i){
   const y=v=>v==null?"":Math.floor(v);
   const age=b[I.lastY]!=null?Math.max(0,Math.round(M.nowYear-b[I.lastY])):null;
   const html='<div class="pop"><div class="ttl">'+esc(b[I.addr]||"Adres onbekend")+'</div>'+
-    '<div class="sub">Meetbout '+esc(b[I.id])+(b[I.blk]?" · blok "+esc(b[I.blk]):"")+(b[I.status]?" · "+esc(b[I.status]):"")+'</div>'+pill(c)+
+    '<div class="sub">Meetbout '+esc(b[I.id])+' van de gemeente'+(b[I.status]&&b[I.status]!=="Actueel"?" · "+esc(b[I.status]):"")+'</div>'+pill(c)+
     '<table class="kv">'+
-    '<tr><th>Recent</th><td>'+(b[I.recent]==null?"te korte meetreeks":nf(b[I.recent])+" mm/jaar <span class=m>"+y(b[I.rfrom])+"–"+y(b[I.lastY])+"</span>")+'</td></tr>'+
-    '<tr><th>Eerder</th><td>'+(b[I.early]==null?"–":nf(b[I.early])+" mm/jaar <span class=m>"+y(b[I.efrom])+"–"+y(b[I.rfrom])+"</span>")+'</td></tr>'+
-    '<tr><th>Gemiddeld</th><td>'+(b[I.total]==null?"–":nf(b[I.total])+" mm/jaar")+'</td></tr>'+
+    '<tr><th>Laatste jaren</th><td>'+(b[I.recent]==null?"te weinig metingen":nf(b[I.recent])+" mm/jaar <span class=m>"+y(b[I.rfrom])+"–"+y(b[I.lastY])+"</span>")+'</td></tr>'+
+    '<tr><th>Daarvoor</th><td>'+(b[I.early]==null?"–":nf(b[I.early])+" mm/jaar <span class=m>"+y(b[I.efrom])+"–"+y(b[I.rfrom])+"</span>")+'</td></tr>'+
+    '<tr><th>Sinds 1e meting</th><td>'+(b[I.total]==null?"–":nf(b[I.total])+" mm/jaar")+'</td></tr>'+
     '<tr><th>Totaal gezakt</th><td>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+b[I.n]+(b[I.last]?" · laatste "+fmtDate(b[I.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
     '</table>'+omgRegel(omgeving(b[I.lat],b[I.lon],ROND_M,i,-1))+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Grafiek wordt geladen …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">Grafiek kon niet worden geladen.</p>':"")+
-    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · <a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · '+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([b[I.lat],b[I.lon]]).setContent(html).openOn(map);
   curPop={i:i,p:p};
   const el=p.getElement&&p.getElement();
   if(el){const a=el.querySelector("a[data-meas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();openMeas(i);});}
-  bindLink(el);
+  bindLink(el);rondLink(el,b[I.lat],b[I.lon],b[I.addr]||("meetbout "+b[I.id]));
   egPopup(el,b[I.lat],b[I.lon]);
 }
 // "Link naar dit punt": kopieert de link; lukt dat niet, dan gewoon openen.
@@ -3347,15 +3365,15 @@ function bindLink(el){
   });
 }
 function houseNo(a){const m=String(a||"").match(/\s(\d+)/);return m?parseInt(m[1],10):1e9;}
-function groupTitle(gi){return (G[gi][0]||"Zonder adres")+(G[gi][1]?" · blok "+G[gi][1]:"");}
+function groupTitle(gi){return G[gi][0]||"Zonder adres";}
 function openList(title,idx,latlng){
   idx=idx.slice().sort((a,b)=>houseNo(B[a][I.addr])-houseNo(B[b][I.addr])||String(B[a][I.addr]).localeCompare(String(B[b][I.addr]),"nl"));
   const v=idx.filter(i=>C[i]!=="oud").map(i=>B[i][I.recent]);const med=v.length?median(v):null;
   const n={rood:0,geel:0,groen:0,stab:0,oud:0};idx.forEach(i=>n[C[i]]++);
   const mix=KL.filter(k=>n[k]).map(k=>'<span style="white-space:nowrap"><i class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+COL[k]+'"></i> '+n[k]+"</span>").join(" &nbsp;");
   const rows=idx.map(i=>'<tr data-i="'+i+'"><td><i class="sw" style="background:'+COL[C[i]]+'"></i></td><td>'+esc(B[i][I.addr]||B[i][I.id])+'</td><td class="n">'+(B[i][I.recent]==null?"–":nf(B[i][I.recent]))+'</td><td class="n m">'+esc((B[i][I.last]||"").slice(0,4))+"</td></tr>").join("");
-  const html='<div class="pop"><div class="ttl">'+esc(title)+'</div><div class="sub">'+idx.length+" meetbouten · mediaan recent "+(med==null?"–":nf(med)+" mm/jaar")+'</div>'+
-    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">mm/jaar recent · jaar laatste meting. Klik een regel voor details.</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+  const html='<div class="pop"><div class="ttl">'+esc(title)+'</div><div class="sub">'+idx.length+" meetbouten"+(med==null?"":" · "+snelZin(med,v.length))+'</div>'+
+    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">Per meetbout: mm per jaar de laatste jaren · jaar van de laatste meting. Klik een regel voor details.</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng(latlng).setContent(html).openOn(map);
   const el=p.getElement&&p.getElement();
   if(el)el.querySelectorAll("tr[data-i]").forEach(tr=>tr.addEventListener("click",()=>{const i=+tr.dataset.i;map.setView([B[i][I.lat],B[i][I.lon]],Math.max(map.getZoom(),18));setTimeout(()=>openBout(i),250);}));
@@ -3498,38 +3516,43 @@ function omgeving(lat,lon,r,skipB,skipN){
   }
   return res;
 }
+// "zakt 1,2 mm per jaar" / "zakken doorgaans …" / "stijgt …"
+function snelZin(v,n){const meer=n>1,st=v<0;return (st?(meer?"stijgen":"stijgt"):(meer?"zakken":"zakt"))+(meer?" doorgaans ":" ")+nf(Math.abs(v))+" mm per jaar";}
 function afstand(m){return m<1000?Math.round(m/10)*10+" m":nf(m/1000,1)+" km";}
 function omgRegel(o){
   const d=[];
-  if(o.b.v.length)d.push("mediaan "+nf(median(o.b.v))+" mm/jaar van "+o.b.v.length+" andere meetbout"+(o.b.v.length>1?"en":""));
-  if(o.p.v.length)d.push("mediaan "+nf(median(o.p.v))+" mm/jaar van "+o.p.v.length+" ander"+(o.p.v.length>1?"e":"")+" peilmerk"+(o.p.v.length>1?"en":""));
-  return d.length?'<div class="omg">Binnen '+ROND_M+' m: '+d.join("; ")+'.</div>':"";
+  if(o.b.v.length)d.push(o.b.v.length+" andere meetbout"+(o.b.v.length>1?"en ":" ")+snelZin(median(o.b.v),o.b.v.length));
+  if(o.p.v.length)d.push(o.p.v.length+" ander"+(o.p.v.length>1?"e peilmerken ":" peilmerk ")+snelZin(median(o.p.v),o.p.v.length));
+  return d.length?'<div class="omg">In de buurt (binnen '+ROND_M+' m): '+d.join("; ")+'.</div>':"";
 }
 const ROND={el:document.getElementById("rond"),cirkel:null};
+// De stippelcirkel staat in een eigen laag zonder klikken, zodat meetpunten eronder klikbaar blijven.
+if(map.createPane){map.createPane("rond");const rp=map.getPane("rond");if(rp){rp.style.zIndex=450;rp.style.pointerEvents="none";}}
+ROND.rend=L.svg({pane:"rond"});
 function rondSluit(){ROND.el.hidden=true;ROND.terug=false;if(ROND.cirkel){map.removeLayer(ROND.cirkel);ROND.cirkel=null;}}
 function toonRond(lat,lon,naam){
   if(ROND.cirkel)map.removeLayer(ROND.cirkel);
-  ROND.cirkel=L.circle([lat,lon],{radius:ROND_M,color:RING,weight:2,dashArray:"5 5",fill:false,interactive:false}).addTo(map);
+  ROND.cirkel=L.circle([lat,lon],{radius:ROND_M,color:RING,weight:2,dashArray:"5 5",fill:false,interactive:false,renderer:ROND.rend,pane:"rond"}).addTo(map);
   const blok=(t,soort,meer,enkel)=>{
     if(!t.n)return '<p class="rs"><b>'+soort+'</b>: geen binnen '+ROND_M+' m'+(isFinite(t.dichtst)?' (dichtstbijzijnde op '+afstand(t.dichtst)+')':'')+'.</p>';
     const bar=KL.filter(k=>t.k[k]).map(k=>'<i style="width:'+(100*t.k[k]/t.n).toFixed(1)+'%;background:'+COL[k]+'" title="'+esc(label(k)[0])+': '+t.k[k]+'"></i>').join("");
-    return '<p class="rs"><b>'+t.n+' '+(t.n>1?meer:enkel)+'</b>'+(t.v.length?' · mediaan '+nf(median(t.v))+' mm/jaar ('+t.v.length+' met recente snelheid)':' · geen met een recente snelheid')+
+    return '<p class="rs"><b>'+t.n+' '+(t.n>1?meer:enkel)+'</b>'+(t.v.length?' · '+snelZin(median(t.v),t.v.length)+(t.v.length<t.n?' (snelheid van '+t.v.length+' bekend)':''):(t.n>1?' · van geen enkele is een recente snelheid bekend':' · geen recente snelheid bekend'))+
       '<span class="rbar">'+bar+'</span><span class="rk">'+KL.filter(k=>t.k[k]).map(k=>esc(label(k)[0])+' '+t.k[k]).join(" · ")+(t.laatste?' · laatste meting '+t.laatste:'')+'</span></p>';
   };
   const teken=()=>{
     const o=omgeving(lat,lon,ROND_M);
-    ROND.el.innerHTML='<div class="rt"><div><h2>Rond '+esc(naam)+'</h2><div class="rk">Alle meetpunten binnen '+ROND_M+' m (stippellijn op de kaart)</div></div><button class="x" type="button" aria-label="Sluiten">×</button></div>'+
-      ((o.b.n||o.b.dichtst<3000)?blok(o.b,"Meetbouten","meetbouten","meetbout"):"")+(M.napUrl?(o.napKlaar?blok(o.p,"NAP-peilmerken","NAP-peilmerken","NAP-peilmerk"):'<p class="rs rk">Peilmerken laden …</p>'):"")+
+    ROND.el.innerHTML='<div class="rt"><div><h2>Rond '+esc(naam)+'</h2><div class="rk">Alle meetpunten binnen '+ROND_M+' meter (de stippellijn op de kaart)</div></div><button class="x" type="button" aria-label="Sluiten">×</button></div>'+
+      ((o.b.n||o.b.dichtst<3000)?blok(o.b,"Meetbouten","meetbouten","meetbout"):"")+(M.napUrl?(o.napKlaar?blok(o.p,"Peilmerken","peilmerken","peilmerk"):'<p class="rs rk">Peilmerken laden …</p>'):"")+
       (M.egmsUrl?'<div id="rondEg"><p class="rs rk">Satellietmetingen laden …</p></div>':"")+
       '<p class="rs rk">Gemeten snelheden, zonder oordeel of advies. Klik op een punt voor details.</p>';
     ROND.el.querySelector(".x").addEventListener("click",rondSluit);
     ROND.el.hidden=false;
     if(M.egmsUrl)egRond(lat,lon,ROND_M).then(e=>{
       const box=document.getElementById("rondEg");if(!box)return;
-      if(!e||!e.n){box.innerHTML='<p class="rs"><b>Satellietmetingen</b>: geen vakken binnen '+ROND_M+' m.</p>';return;}
+      if(!e||!e.n){box.innerHTML='<p class="rs"><b>Satelliet</b>: hier is binnen '+ROND_M+' m niets gemeten.</p>';return;}
       const bar=KL.filter(k=>e.k[k]).map(k=>'<i style="width:'+(100*e.k[k]/e.n).toFixed(1)+'%;background:'+COL[k]+'"></i>').join("");
-      box.innerHTML='<p class="rs"><b>'+e.n+' vakken van 100 m (satelliet)</b>'+(e.v.length?' · '+egZin(median(e.v)):'')+
-        '<span class="rbar">'+bar+'</span><span class="rk">Bodem en bebouwing samen, gemeten door satellieten ('+esc(String(M.egmsRelease||"").replace("-","–"))+').</span></p>';
+      box.innerHTML='<p class="rs"><b>Satelliet: '+e.n+' blok'+(e.n>1?'ken':'')+' van 100 m</b>'+(e.v.length?' · '+egZin(median(e.v)):'')+
+        '<span class="rbar">'+bar+'</span><span class="rk">Grond, straten en gebouwen samen, gemeten vanuit de ruimte ('+esc(String(M.egmsRelease||"").replace("-","–"))+').</span></p>';
     });
     return o.napKlaar;
   };
@@ -3537,6 +3560,14 @@ function toonRond(lat,lon,naam){
     const t=setInterval(()=>{if(NAP.rows){clearInterval(t);if(!ROND.el.hidden)teken();}else if(NAP.state==="fout")clearInterval(t);},200);}
 }
 L.DomEvent.disableClickPropagation(ROND.el);L.DomEvent.disableScrollPropagation(ROND.el);
+map.on("contextmenu",e=>{if(e.originalEvent&&e.originalEvent.preventDefault)e.originalEvent.preventDefault();
+  map.closePopup();toonRond(e.latlng.lat,e.latlng.lng,"dit punt");});
+// link 'In de buurt' in een pop-up
+function rondLink(el,lat,lon,naam){
+  if(!el)return;const a=el.querySelector("a[data-rond]");if(!a)return;
+  a.addEventListener("click",ev=>{ev.preventDefault();map.closePopup();toonRond(lat,lon,naam);});
+}
+const RONDA='<a class="raw" href="#" data-rond>Alles binnen '+ROND_M+' m</a> · ';
 // Op mobiel is er geen ruimte voor paneel én pop-up: paneel even weg zolang een pop-up open is.
 map.on("popupopen",()=>{if(!ROND.el.hidden&&matchMedia("(max-width:640px)").matches){ROND.el.hidden=true;ROND.terug=true;}});
 map.on("popupclose",()=>{if(ROND.terug&&ROND.cirkel){ROND.el.hidden=false;}ROND.terug=false;});
@@ -3660,7 +3691,7 @@ function napGrid(z,cnt){
     GRID.layer.addLayer(rc);
   }
   cnt.textContent=n.toLocaleString("nl-NL");
-  napNote("Vakjes: mediaan van de peilmerken per vak. Klik op een vak of zoom in voor losse peilmerken.");
+  napNote("Uitgezoomd: per vakje de doorsnee van de peilmerken erin. Klik op een vakje of zoom in voor losse peilmerken.");
 }
 function napOpen(i){
   const r=NAP.rows[i],c=napCls(r),y=v=>v==null?"":Math.floor(v);
@@ -3668,23 +3699,23 @@ function napOpen(i){
   const age=r[NI.lastY]!=null?Math.max(0,Math.round(M.nowYear-r[NI.lastY])):null;
   const s=NAP.ser?NAP.ser[i]:null;
   const ch=s?chartSeries(s,r[NI.rfrom],c):NAP.serState==="fout"?'<p class="mnote">Grafiek kon niet worden geladen.</p>':r[NI.n]>1?'<p class="mnote">Grafiek wordt geladen …</p>':"";
-  const lbl=c==="oud"?(r[NI.sprong]?"Onzekere meetreeks":"Geen recente of te korte meetreeks"):label(c)[0];
-  const html='<div class="pop"><div class="ttl">NAP-peilmerk '+esc(r[NI.p])+'</div>'+
+  const lbl=c==="oud"?(r[NI.sprong]?"Onzekere metingen":"Geen recente metingen of te weinig metingen"):label(c)[0];
+  const html='<div class="pop"><div class="ttl">Peilmerk '+esc(r[NI.p])+' <span style="font-weight:400;color:var(--muted)">(Rijkswaterstaat)</span></div>'+
     '<div class="sub">'+esc(r[NI.oms]||"")+'</div>'+
     '<div class="pill"><i style="background:#fff;box-shadow:inset 0 0 0 2.5px '+COL[c]+'"></i>'+esc(lbl)+'</div>'+
     '<table class="kv">'+
-    '<tr><th>Recent</th><td>'+(r[NI.recent]==null?"te korte meetreeks":nf(r[NI.recent])+" mm/jaar <span class=m>"+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>")+'</td></tr>'+
-    '<tr><th>Hele reeks</th><td>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar <span class=m>"+esc((r[NI.first]||"").slice(0,4))+"–"+esc((r[NI.last]||"").slice(0,4))+"</span>")+'</td></tr>'+
+    '<tr><th>Laatste jaren</th><td>'+(r[NI.recent]==null?"te weinig metingen":nf(r[NI.recent])+" mm/jaar <span class=m>"+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>")+'</td></tr>'+
+    '<tr><th>Sinds 1e meting</th><td>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar <span class=m>"+esc((r[NI.first]||"").slice(0,4))+"–"+esc((r[NI.last]||"").slice(0,4))+"</span>")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+r[NI.n]+(r[NI.last]?" · laatste "+fmtDate(r[NI.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
-    '</table>'+omgRegel(omgeving(r[NI.lat],r[NI.lon],ROND_M,-1,i))+(r[NI.sprong]?'<p class="mnote">De reeks bevat een onverklaarde sprong (mogelijk een herberekening of meetfout); daarom grijs.</p>':"")+ch+
-    '<p class="mnote">Een peilmerk meet de hoogte t.o.v. NAP, inclusief bodemdaling van de omgeving. Rijkswaterstaat meet het eens per 5–15 jaar.</p>'+
-    (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">Alle meetgegevens bekijken</a> · ':"")+'<a class="raw" href="?punt='+encodeURIComponent(r[NI.p])+'" data-link>Link naar dit punt</a>'+
-    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat (NAP), CC0</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+    '</table>'+omgRegel(omgeving(r[NI.lat],r[NI.lon],ROND_M,-1,i))+(r[NI.sprong]?'<p class="mnote">In de metingen zit een plotselinge sprong die niet te verklaren is (misschien een meetfout of een andere rekenmethode). Daarom is dit punt grijs.</p>':"")+ch+
+    '<p class="mnote">Een peilmerk is een metalen boutje in een gebouw of brug. Rijkswaterstaat meet eens per 5 tot 15 jaar hoe hoog het ligt. Het zakt mee met de grond in de omgeving.</p>'+
+    (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">Alle meetgegevens bekijken</a> · ':"")+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(r[NI.p])+'" data-link>Link naar dit punt</a>'+
+    '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([r[NI.lat],r[NI.lon]]).setContent(html).openOn(map);
   NAP.cur={i:i,p:p};
   const el=p.getElement&&p.getElement();
   if(el){const a=el.querySelector("a[data-nmeas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();napMeas(i);});}
-  bindLink(el);
+  bindLink(el);rondLink(el,r[NI.lat],r[NI.lon],"peilmerk "+r[NI.p]);
   egPopup(el,r[NI.lat],r[NI.lon]);
   if(!NAP.ser)napLoadSer();
 }
@@ -3694,10 +3725,10 @@ function napQueryUrl(p,fmt){
 }
 function napSummary(r){
   const c=napCls(r),y=v=>v==null?"":Math.floor(v);
-  const lbl=c==="oud"?(r[NI.sprong]?"Onzekere meetreeks":"Geen recente of te korte meetreeks"):label(c)[0];
+  const lbl=c==="oud"?(r[NI.sprong]?"Onzekere metingen":"Geen recente metingen of te weinig metingen"):label(c)[0];
   return '<div class="msum">'+
-    '<span>Recent: <b>'+(r[NI.recent]==null?"–":nf(r[NI.recent])+" mm/jaar")+'</b> '+(r[NI.rfrom]!=null?'<span class="m">'+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>":"")+'</span>'+
-    '<span>Hele reeks: <b>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar")+'</b></span>'+
+    '<span>Laatste jaren: <b>'+(r[NI.recent]==null?"–":nf(r[NI.recent])+" mm/jaar")+'</b> '+(r[NI.rfrom]!=null?'<span class="m">'+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>":"")+'</span>'+
+    '<span>Sinds 1e meting: <b>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar")+'</b></span>'+
     '<span>Klasse: <b>'+esc(lbl)+'</b></span></div>';
 }
 function napRawSection(link,err){
@@ -3708,7 +3739,7 @@ function napRawSection(link,err){
 function napMeas(i){
   TEL.tel("meet");
   const r=NAP.rows[i];lastFocus=document.activeElement;
-  mTitle.textContent="NAP-peilmerk "+r[NI.p];
+  mTitle.textContent="Peilmerk "+r[NI.p]+" (Rijkswaterstaat)";
   mSub.textContent=[r[NI.oms],r[NI.status]].filter(Boolean).join(" · ");
   mBody.innerHTML='<p class="mnote">Meetgegevens ophalen bij Rijkswaterstaat …</p>';
   modal.hidden=false;document.getElementById("mClose").focus();
@@ -3796,14 +3827,16 @@ function egVak(lat,lon,hy,hx,v,onz,info){
   return r;
 }
 function egOpen(lat,lon,v,onz,info){
-  const html='<div class="pop"><div class="ttl">Bodembeweging (satelliet)</div>'+
-    '<div class="sub">'+(info?"Mediaan van "+info+" vakken van 100 m":"Vak van 100 × 100 m")+' · '+esc(String(M.egmsRelease||"").replace("-","–"))+'</div>'+
+  const html='<div class="pop"><div class="ttl">Bodemdaling gemeten vanuit de ruimte</div>'+
+    '<div class="sub">'+(info?"Doorsnee van "+info+" blokken van 100 m":"Blok van 100 × 100 meter")+' · gemeten '+esc(String(M.egmsRelease||"").replace("-","–"))+'</div>'+
     '<p style="margin:6px 0 0;font-size:14px"><b>'+(onz?"Onzekere meting":egTekst(v))+'</b></p>'+
-    '<p class="mnote">Satellieten meten de hoogte van het aardoppervlak en van bebouwing en infrastructuur samen; per vak is dat een gemiddelde. '+
-    'Een gebouw op palen kan stil staan terwijl de grond eromheen zakt, en andersom. De meetbouten en peilmerken meten één punt aan een gebouw of bouwwerk.</p>'+
-    '<div class="sub" style="margin-top:4px">Bron: '+esc(M.egmsBron||"Copernicus EGMS")+'</div>'+
+    '<p class="mnote">Satellieten meten met radar de hoogte van grond, straten en gebouwen samen; per blok is dat een gemiddelde. '+
+    'Een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Meetbouten en peilmerken meten wél één punt aan één gebouw.</p>'+
+    '<div class="sub" style="margin-top:4px">Bron: Copernicus, het aardobservatieprogramma van de EU ('+esc(M.egmsBron||"EGMS")+')</div>'+
+    (info?'':'<a class="raw" href="#" data-rond>Alles binnen '+ROND_M+' m</a>')+
     '<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p></div>';
-  L.popup({maxWidth:320,autoPanPadding:[20,20]}).setLatLng([lat,lon]).setContent(html).openOn(map);
+  const pp=L.popup({maxWidth:320,autoPanPadding:[20,20]}).setLatLng([lat,lon]).setContent(html).openOn(map);
+  if(!info)rondLink(pp.getElement&&pp.getElement(),lat,lon,"dit vak");
 }
 function egRefresh(restyle){
   if(!M.egmsUrl)return;
@@ -3819,9 +3852,9 @@ function egRefresh(restyle){
       EG.layer.addLayer(egVak(la,lo,d[1]/2,d[0]/2,arr[i+2],0,arr[i+3]));}
     egNote(txt);
   };
-  if(z<11){tekenRaster(EG.ov.r5,EG.ov.d5,"Vakken van ± 5 km: mediaan van de satellietmetingen. Zoom in voor meer detail.");return;}
+  if(z<11){tekenRaster(EG.ov.r5,EG.ov.d5,"Uitgezoomd: per blok van ongeveer 5 km de doorsnee. Zoom in voor meer detail.");return;}
   const sl=egSleutels(bb);
-  if(z<EG.DETAIL||sl.length>16){tekenRaster(EG.ov.r1,EG.ov.d1,"Vakken van ± 1 km: mediaan. Zoom verder in voor vakken van 100 m.");return;}
+  if(z<EG.DETAIL||sl.length>16){tekenRaster(EG.ov.r1,EG.ov.d1,"Per blok van ongeveer 1 km de doorsnee. Zoom verder in voor blokken van 100 m.");return;}
   const zoomNu=z;
   Promise.all(sl.map(egTegel)).then(lijsten=>{
     if(map.getZoom()!==zoomNu||!S.showEgms)return;
@@ -3830,7 +3863,7 @@ function egRefresh(restyle){
     for(const a of lijsten)for(let i=0;i<a.length;i+=4){
       if(!b2.contains([a[i],a[i+1]]))continue;
       EG.layer.addLayer(egVak(a[i],a[i+1],hy,hx,a[i+2],a[i+3],0));}
-    egNote("Vakken van 100 m. Klik op een vak voor de snelheid.");
+    egNote("Blokken van 100 m. Geen kleur betekent: daar is niets gemeten (zoals weilanden en water). Klik op een blok voor de snelheid.");
   });
 }
 map.on("moveend",()=>egRefresh(false));
@@ -3859,13 +3892,13 @@ function egRond(lat,lon,r){
     });
   }
 }
-function egZin(m){return Math.abs(m)<0.05?"beweegt niet meetbaar":m>0?"mediaan zakking "+nf(m,1)+" mm/jaar":"mediaan stijging "+nf(-m,1)+" mm/jaar";}
+function egZin(m){return Math.abs(m)<0.05?"de grond beweegt doorgaans niet meetbaar":m>0?"de grond zakt doorgaans "+nf(m,1)+" mm per jaar":"de grond stijgt doorgaans "+nf(-m,1)+" mm per jaar";}
 // In een pop-up: hoe beweegt de bodem eromheen volgens de satellieten?
 function egPopup(el,lat,lon){
   if(!M.egmsUrl||!el)return;
   egRond(lat,lon,ROND_M).then(o=>{
     if(!o||!o.v.length||!el.isConnected)return;
-    const t="Bodem en bebouwing (satelliet) binnen "+ROND_M+" m: "+egZin(median(o.v))+" over "+o.v.length+" vakken van 100 m.";
+    const t="Satelliet (binnen "+ROND_M+" m): "+egZin(median(o.v))+" ("+o.v.length+" blokken van 100 m).";
     const d=el.querySelector(".omg");
     if(d)d.insertAdjacentHTML("beforeend",'<br>'+esc(t));
     else{const a=el.querySelector("a.raw");if(a)a.insertAdjacentHTML("beforebegin",'<div class="omg">'+esc(t)+'</div>');}
