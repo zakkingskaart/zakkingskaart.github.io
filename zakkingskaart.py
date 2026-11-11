@@ -1500,6 +1500,25 @@ def _sorteer(naam):
     return re.sub(r"^('s-|'t |[^a-z0-9]+)", "", n)
 
 
+_RANGTELWOORD = {"1e": "eerste", "2e": "tweede", "3e": "derde", "4e": "vierde", "5e": "vijfde"}
+
+
+def _straat_sleutel(naam):
+    """Sleutel om schrijfwijzen van dezelfde straat samen te voegen: hoofdletters, spaties,
+    leestekens, accenten en '1e'/'Eerste' tellen niet mee."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", naam).encode("ascii", "ignore").decode("ascii").lower().strip()
+    t = re.sub(r"^([1-5]e)\b", lambda m: _RANGTELWOORD[m.group(1)], t)
+    return re.sub(r"[^a-z0-9]", "", t)
+
+
+def _geen_straatnaam(naam):
+    """Omschrijvingen in het adresveld die geen straatnaam zijn ('??Vervallen mei', 'Gevel aan …')."""
+    return bool(not re.match(r"^[0-9A-Za-zÀ-ÿ']", naam)
+                or re.search(r"\?|\bvervallen\b|\bperceel\b|\bgevel\b|\bzie\b|\bnabij\b|\btegenover\b", naam, re.I)
+                or len(naam.split()) > 5)
+
+
 def _nl(v, d=1):
     return "–" if v is None else f"{v:.{d}f}".replace(".", ",").replace("-", "−")
 
@@ -1578,7 +1597,18 @@ footer p{margin:0 0 8px}
 """
 
 
-def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum):
+def _og_beeld(url):
+    if not url:
+        return []
+    return [f'<meta property="og:image" content="{_h(url)}">',
+            f'<meta property="og:image:width" content="{DEELBEELD_W}">',
+            f'<meta property="og:image:height" content="{DEELBEELD_H}">',
+            '<meta property="og:image:alt" content="Kaart van Nederland met gekleurde meetpunten: hoe snel zakken ze?">',
+            '<meta name="twitter:card" content="summary_large_image">']
+
+
+def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_url="", egms=False):
+    bron_extra = "; " + _h(EGMS_BRON) if egms else ""
     k = " › ".join(f'<a href="{_h(u)}">{_h(t)}</a>' if u else _h(t) for t, u in kruimel)
     return f"""<!doctype html>
 <html lang="nl">
@@ -1593,6 +1623,7 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum):
 <meta property="og:title" content="{_h(titel)}">
 <meta property="og:description" content="{_h(beschrijving)}">
 <meta property="og:url" content="{_h(canon)}">
+{chr(10).join(_og_beeld(og_url))}
 <link rel="stylesheet" href="{_h(css)}">
 </head>
 <body>
@@ -1603,7 +1634,7 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum):
 </main>
 <footer><div class="in">
 <p>Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat. Deze pagina geeft openbare meetgegevens eenvoudiger weer en geeft geen oordeel of advies over gebouwen, de grond of de waarde ervan. Aan de gegevens kunnen geen rechten worden ontleend. Vragen over de meetgegevens gaan naar de bron: zie <a href="{root}#over">Over &amp; disclaimer</a>.</p>
-<p>Bronnen: Rijkswaterstaat, NAP-peilmerken (CC0); gemeente Amsterdam, meetbouten en gebiedsindeling (CC0); Kadaster, Bestuurlijke Gebieden (CC BY 4.0). Bijgewerkt: {_h(datum)}.</p>
+<p>Bronnen: Rijkswaterstaat, NAP-peilmerken (CC0); gemeente Amsterdam, meetbouten en gebiedsindeling (CC0); Kadaster, Bestuurlijke Gebieden (CC BY 4.0){bron_extra}. Bijgewerkt: {_h(datum)}.</p>
 </div></footer>
 </body>
 </html>
@@ -1643,7 +1674,8 @@ def _zoom_voor(bbox, lo=9, hi=16):
     return max(lo, min(hi, int(math.log2(360.0 * 3.5 / span))))
 
 
-def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, rows, gemeenten, buurten):
+def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, rows, gemeenten, buurten, og_url="",
+                   egms=None):
     """Schrijft /gemeenten/, /gemeente/<naam>/ en /gemeente/amsterdam/<buurt>/.
     Geeft de lijst met paden (voor de sitemap) terug."""
     import shutil
@@ -1696,7 +1728,10 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                 continue
             b_tel[bi].voeg(k, b["r"]["recent"], b["r"]["lastY"])
             if b["street"]:
-                b_straat[bi].setdefault(b["street"], _Telling()).voeg(k, b["r"]["recent"], b["r"]["lastY"])
+                sl = "" if _geen_straatnaam(b["street"]) else _straat_sleutel(b["street"])
+                st = b_straat[bi].setdefault(sl, {"namen": {}, "t": _Telling()})
+                st["namen"][b["street"]] = st["namen"].get(b["street"], 0) + 1
+                st["t"].voeg(k, b["r"]["recent"], b["r"]["lastY"])
         if ams is not None:
             for r in g_nap[ams]:
                 bi = bidx.zoek(r[1], r[2])
@@ -1711,7 +1746,26 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             bslugs.append(s)
         log(f"         {len(buurten)} Amsterdamse buurten, {fmt_int(len(rows) - geen)} meetbouten toegewezen"
             + (f" ({geen} buiten alle buurten)" if geen else ""))
+    g_egms = egms_per_gebied(egms, gemeenten, args.rood, args.geel) if egms else None
+    b_egms = egms_per_gebied(egms, buurten, args.rood, args.geel) if (egms and buurten) else None
+    release = egms[1].get("release", "") if egms else ""
     toon_buurt = [b_tel[i].n >= 3 or b_nap[i].met_recent >= 1 for i in range(len(buurten or []))]
+
+    def egms_blok(t, waar):
+        if t is None:
+            return ""
+        if not t.n:
+            return (f"<h2>Bodembeweging gemeten door satellieten</h2><p>Voor {waar} zijn geen satellietmetingen "
+                    f"(EGMS) beschikbaar.</p>")
+        return (f"<h2>Bodembeweging gemeten door satellieten</h2>"
+                f"<p>Satellieten van het Europese Copernicus-programma meten in {waar} {fmt_int(t.n)} vakken van 100 bij 100 meter. "
+                f"De middelste waarde (mediaan) van de zakking is {_nl(t.mediaan, 1)} mm per jaar "
+                f"(periode {_h(release.replace('-', '–'))}).</p>"
+                + _verdeling(t, args.rood, args.geel, False).replace("Geen recente of te weinig metingen", "Onzekere meting")
+                .replace("<th>Recente snelheid</th>", f"<th>Snelheid {_h(release.replace('-', '–'))}</th>")
+                + "<p class=\"uitleg\">Een satelliet meet de hoogte van het aardoppervlak en van bebouwing en infrastructuur "
+                  "samen; per vak van 100 meter is dat een gemiddelde. Een gebouw op palen kan stil staan terwijl de grond "
+                  "eromheen zakt, en andersom. Bron: " + _h(EGMS_BRON) + ".</p>")
 
     def schrijf(rel, html):
         p = os.path.join(out_dir, rel, "index.html")
@@ -1757,6 +1811,8 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         if t.n:
             delen.append(_verdeling(t, args.rood, args.geel, False))
         delen.append(uitleg_nap)
+        if g_egms:
+            delen.append(egms_blok(g_egms[gi], _h(naam)))
         if gi == ams and buurten:
             delen.append("<h2>Meetbouten per buurt</h2>")
             delen.append(f"<p>In Amsterdam meet de gemeente daarnaast de hoogte van {fmt_int(a_tel.n)} meetbouten in gevels. "
@@ -1785,7 +1841,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         schrijf(f"gemeente/{slugs[gi]}", _pagina(
             f"Zakking en bodemdaling in {naam} | Zakkingskaart", besch, f"{site_url}gemeente/{slugs[gi]}/", root,
             root + root_css, [("Zakkingskaart", root), ("Gemeenten", "../../gemeenten/"), (naam, None)],
-            "\n".join(delen), datum))
+            "\n".join(delen), datum, og_url, bool(egms)))
 
     # --- pagina per Amsterdamse buurt ---
     if ams is not None and buurten:
@@ -1813,15 +1869,20 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                              f"Van {fmt_int(t.met_recent)} daarvan is een recente zakkingssnelheid bekend"
                              + (f"; de mediaan is {_nl(t.mediaan, 2)} mm per jaar" if t.met_recent else "") + ".</p>")
                 delen.append(_verdeling(t, args.rood, args.geel, True))
-                straten = sorted(b_straat[bi].items(), key=lambda kv: _sorteer(kv[0]))
+                straten = []
+                for sl, st in b_straat[bi].items():
+                    # weergavenaam: de meest gebruikte schrijfwijze (bij gelijkspel die met hoofdletters)
+                    naam = max(st["namen"].items(), key=lambda kv: (kv[1], sum(c.isupper() for c in kv[0]), kv[0]))[0]
+                    straten.append((naam if sl else "Overige meetbouten (adres niet eenduidig)", st["t"], sl == ""))
+                straten.sort(key=lambda x: (x[2], _sorteer(x[0])))
                 if straten:
                     delen.append("<h2>Per straat</h2>")
                     delen.append('<div class="tabel"><table><thead><tr><th>Straat</th><th class="n">Meetbouten</th>'
                                  '<th class="n">Met recente snelheid</th><th class="n">Mediaan (mm/jaar)</th>'
                                  '<th class="n">Laatste meting</th></tr></thead><tbody>' + "".join(
-                                     f'<tr><td>{_h(s)}</td><td class="n">{fmt_int(st.n)}</td>'
+                                     f'<tr><td>{"<i>" + _h(s) + "</i>" if overig else _h(s)}</td><td class="n">{fmt_int(st.n)}</td>'
                                      f'<td class="n">{fmt_int(st.met_recent)}</td><td class="n">{_nl(st.mediaan, 2)}</td>'
-                                     f'<td class="n">{st.laatste or "–"}</td></tr>' for s, st in straten)
+                                     f'<td class="n">{st.laatste or "–"}</td></tr>' for s, st, overig in straten)
                                  + "</tbody></table></div>")
             else:
                 delen.append("<p>In deze buurt staan geen meetbouten van de gemeente.</p>")
@@ -1830,6 +1891,8 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                          "Een meetbout zegt iets over die ene gevel; de kaart en deze pagina geven alleen de gemeten "
                          "snelheden weer.</p>")
             delen.append("<h2>NAP-peilmerken</h2>" + napzin(tn, "deze buurt"))
+            if b_egms:
+                delen.append(egms_blok(b_egms[bi], "deze buurt"))
             delen.append(f'<p><a href="../">Alle buurten in Amsterdam</a> · <a href="../../../gemeenten/">Alle gemeenten</a></p>')
             besch = (f"Openbare meetbouten van de gemeente Amsterdam in {b['naam']}: {fmt_int(t.n)} meetbouten, waarvan "
                      f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid"
@@ -1838,7 +1901,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                 f"Zakking in {b['naam']}, Amsterdam | Zakkingskaart", besch,
                 f"{site_url}gemeente/{aslug}/{bslugs[bi]}/", root, root + root_css,
                 [("Zakkingskaart", root), ("Gemeenten", "../../../gemeenten/"), ("Amsterdam", "../"), (b["naam"], None)],
-                "\n".join(delen), datum))
+                "\n".join(delen), datum, og_url, bool(egms)))
 
     # --- overzicht van alle gemeenten ---
     root = "../"
@@ -1861,17 +1924,474 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         "Zakking en bodemdaling per gemeente | Zakkingskaart",
         "Per gemeente in Nederland een samenvatting van de openbare NAP-metingen van Rijkswaterstaat: aantal peilmerken "
         "en de recente zakkingssnelheid.", f"{site_url}gemeenten/", root, root + root_css,
-        [("Zakkingskaart", root), ("Gemeenten", None)], "\n".join(delen), datum))
+        [("Zakkingskaart", root), ("Gemeenten", None)], "\n".join(delen), datum, og_url, bool(egms)))
     write_text(os.path.join(out_dir, root_css.split("?")[0]), GEBIED_CSS)
     log(f"         {len(paden)} pagina's geschreven")
     return paden
+
+
+# --------------------------------------------------------------------------
+# Voorbeeldplaatje voor gedeelde links (og:image), zonder extra pakketten
+# --------------------------------------------------------------------------
+DEELBEELD = "deelbeeld.png"
+DEELBEELD_W, DEELBEELD_H = 1200, 630
+
+
+def _png(path, w, h, pix):
+    """Schrijft een RGB-PNG. pix is een bytearray van w*h*3."""
+    import zlib
+    import struct
+
+    def chunk(tag, data):
+        c = struct.pack(">I", len(data)) + tag + data
+        return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    raw = bytearray()
+    stride = w * 3
+    for y in range(h):
+        raw.append(0)
+        raw.extend(pix[y * stride:(y + 1) * stride])
+    data = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + chunk(b"IEND", b""))
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as fh:
+        fh.write(data)
+    os.replace(tmp, path)
+
+
+def _rgb(hexkleur):
+    return tuple(int(hexkleur[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def maak_deelbeeld(path, nap_rows, rows, gemeenten, now_y, args):
+    """Kaart van Nederland (gemeenten als ondergrond) met de gekleurde meetpunten:
+    NAP-peilmerken en de Amsterdamse meetbouten met een recente snelheid."""
+    w, h = DEELBEELD_W, DEELBEELD_H
+    bg, land, rand = _rgb("#e4e8ec"), _rgb("#fbfaf7"), _rgb("#cfccc3")
+    pix = bytearray(bytes(bg) * (w * h))
+    lon0, lon1, lat0, lat1 = 3.25, 7.30, 50.70, 53.60
+    kx = math.cos(math.radians(52.2))
+    sc = min((h - 40) / (lat1 - lat0), (w - 40) / ((lon1 - lon0) * kx))
+    ox = (w - (lon1 - lon0) * kx * sc) / 2
+    oy = (h - (lat1 - lat0) * sc) / 2
+
+    def xy(lon, lat):
+        return ox + (lon - lon0) * kx * sc, oy + (lat1 - lat) * sc
+
+    def zet(x, y, c):
+        if 0 <= x < w and 0 <= y < h:
+            i = (y * w + x) * 3
+            pix[i:i + 3] = bytes(c)
+
+    # ondergrond: gemeenten gevuld (scanline, even-oneven), met grenzen
+    for g in gemeenten or []:
+        for rings in g["polys"]:
+            pts_r = [[xy(x, y) for x, y in r] for r in rings]
+            ys = [p[1] for r in pts_r for p in r]
+            for yy in range(max(0, int(min(ys))), min(h, int(max(ys)) + 1)):
+                yc = yy + 0.5
+                xs = []
+                for r in pts_r:
+                    for i in range(len(r) - 1):
+                        (x1, y1), (x2, y2) = r[i], r[i + 1]
+                        if (y1 > yc) != (y2 > yc):
+                            xs.append(x1 + (yc - y1) * (x2 - x1) / (y2 - y1))
+                xs.sort()
+                for a, b in zip(xs[0::2], xs[1::2]):
+                    xa, xb = max(0, int(a + 0.5)), min(w, int(b + 0.5))
+                    if xb > xa:
+                        pix[(yy * w + xa) * 3:(yy * w + xb) * 3] = bytes(land) * (xb - xa)
+            for r in pts_r:
+                for i in range(len(r) - 1):
+                    (x1, y1), (x2, y2) = r[i], r[i + 1]
+                    n = int(max(abs(x2 - x1), abs(y2 - y1))) + 1
+                    for k in range(n + 1):
+                        t = k / n
+                        zet(int(x1 + t * (x2 - x1)), int(y1 + t * (y2 - y1)), rand)
+
+    # meetpunten: eerst groen, dan geel, dan rood bovenop
+    punten = {"groen": [], "geel": [], "rood": []}
+    for r in nap_rows or []:
+        k = nap_klasse(r, now_y, args.rood, args.geel)
+        if k in punten:
+            punten[k].append((r[2], r[1]))
+    for b in rows or []:
+        k = BOUT_KLASSE.get(classify(b["r"], now_y, args.rood, args.geel, 1.5, 0.5, args.max_ouderdom, b["status"]))
+        if k in punten:
+            punten[k].append((b["lon"], b["lat"]))
+    for k in ("groen", "geel", "rood"):
+        c = _rgb(GEBIED_KLEUR[k])
+        for lon, lat in punten[k]:
+            x, y = xy(lon, lat)
+            x, y = int(x), int(y)
+            for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)):
+                zet(x + dx, y + dy, c)
+    _png(path, w, h, pix)
+    return sum(len(v) for v in punten.values())
+
+
+# --------------------------------------------------------------------------
+# EGMS: bodembeweging gemeten door satellieten (Copernicus, European Ground Motion Service)
+# --------------------------------------------------------------------------
+# Product: Ortho, verticale component (L3, ORTHO-UP), vakken van 100 x 100 m, per tegel van
+# 100 x 100 km in ETRS89-LAEA (EPSG:3035). Ophalen gaat via de EGMS-API met een persoonlijke
+# CLMS-sleutel (JSON) in de omgevingsvariabele EGMS_SLEUTEL; zonder sleutel wordt de laag
+# overgeslagen (of de cache gebruikt). Nieuwe releases verschijnen eens per jaar.
+
+EGMS_API = "https://egms.land.copernicus.eu/insar-api/archive"
+EGMS_BBOX = [[3.25, 50.70], [7.30, 53.60]]
+EGMS_BRON = ("Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); "
+             "bevat aangepaste Copernicus Sentinel-data")
+
+
+def _b64url(b):
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
+
+
+def _der_lees(data, pos):
+    """Eén DER-element: geeft (tag, inhoud, volgende positie)."""
+    tag = data[pos]
+    ln = data[pos + 1]
+    pos += 2
+    if ln & 0x80:
+        n = ln & 0x7F
+        ln = int.from_bytes(data[pos:pos + n], "big")
+        pos += n
+    return tag, data[pos:pos + ln], pos + ln
+
+
+def _rsa_sleutel(pem):
+    """(n, d) uit een PEM-privésleutel (PKCS#8 of PKCS#1), zonder extra pakketten."""
+    regels = [r.strip() for r in pem.strip().splitlines() if r.strip() and not r.startswith("-----")]
+    der = base64.b64decode("".join(regels))
+    tag, seq, _ = _der_lees(der, 0)
+    if tag != 0x30:
+        raise ValueError("geen geldige sleutel")
+    # PKCS#8: SEQUENCE { INTEGER 0, SEQUENCE {algoritme}, OCTET STRING {PKCS#1} }
+    t1, v1, p = _der_lees(seq, 0)
+    t2, v2, p2 = _der_lees(seq, p)
+    if t2 == 0x30:
+        t3, inner, _ = _der_lees(seq, p2)
+        if t3 != 0x04:
+            raise ValueError("onbekend sleutelformaat")
+        _, seq, _ = _der_lees(inner, 0)
+    vals, p = [], 0
+    while p < len(seq) and len(vals) < 4:
+        t, v, p = _der_lees(seq, p)
+        if t == 0x02:
+            vals.append(int.from_bytes(v, "big"))
+    if len(vals) < 4:
+        raise ValueError("sleutel onvolledig")
+    return vals[1], vals[3]  # versie, n, e, d
+
+
+def _rs256(bericht, n, d):
+    """RSASSA-PKCS1-v1_5 met SHA-256."""
+    k = (n.bit_length() + 7) // 8
+    t = bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(bericht).digest()
+    em = b"\x00\x01" + b"\xff" * (k - len(t) - 3) + b"\x00" + t
+    return pow(int.from_bytes(em, "big"), d, n).to_bytes(k, "big")
+
+
+def egms_toegang(sleutel_json):
+    """Wisselt de CLMS-sleutel in voor een kortlevend toegangstoken (JWT-bearer, RS256)."""
+    sk = json.loads(sleutel_json)
+    n, d = _rsa_sleutel(sk["private_key"])
+    nu = int(time.time())
+    kop = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    claims = _b64url(json.dumps({"iss": sk["client_id"], "sub": sk["user_id"], "aud": sk["token_uri"],
+                                 "iat": nu, "exp": nu + 3600}, separators=(",", ":")).encode())
+    jwt = kop + "." + claims + "." + _b64url(_rs256((kop + "." + claims).encode(), n, d))
+    body = urllib.parse.urlencode({"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                                   "assertion": jwt}).encode()
+    req = urllib.request.Request(sk["token_uri"], data=body, method="POST", headers={
+        "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        tok = json.loads(r.read().decode("utf-8")).get("access_token")
+    if not tok:
+        raise RuntimeError("geen toegangstoken ontvangen (klopt EGMS_SLEUTEL?)")
+    return tok
+
+
+def _egms_json(url, token, data=None):
+    req = urllib.request.Request(url, data=json.dumps(data).encode() if data is not None else None,
+                                 method="POST" if data is not None else "GET",
+                                 headers={"Authorization": "Bearer " + token, "Accept": "application/json",
+                                          "Content-Type": "application/json", "User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def laea_naar_wgs84(e, n):
+    """ETRS89-LAEA (EPSG:3035) -> (lat, lon) in graden (GRS80, Snyder)."""
+    a, e2 = 6378137.0, 0.00669438002290
+    ec = math.sqrt(e2)
+    lat0, lon0 = math.radians(52.0), math.radians(10.0)
+
+    def q(p):
+        s = math.sin(p)
+        return (1 - e2) * (s / (1 - e2 * s * s) - 1 / (2 * ec) * math.log((1 - ec * s) / (1 + ec * s)))
+    qp = q(math.pi / 2)
+    rq = a * math.sqrt(qp / 2)
+    b0 = math.asin(q(lat0) / qp)
+    dd = a * (math.cos(lat0) / math.sqrt(1 - e2 * math.sin(lat0) ** 2)) / (rq * math.cos(b0))
+    x, y = e - 4321000.0, n - 3210000.0
+    rho = math.hypot(x / dd, dd * y)
+    if rho == 0:
+        return 52.0, 10.0
+    c = 2 * math.asin(rho / (2 * rq))
+    b = math.asin(math.cos(c) * math.sin(b0) + dd * y * math.sin(c) * math.cos(b0) / rho)
+    lon = lon0 + math.atan2(x * math.sin(c), dd * rho * math.cos(b0) * math.cos(c) - dd * dd * y * math.sin(b0) * math.sin(c))
+    lat = (b + (e2 / 3 + 31 * e2 ** 2 / 180 + 517 * e2 ** 3 / 5040) * math.sin(2 * b)
+           + (23 * e2 ** 2 / 360 + 251 * e2 ** 3 / 3780) * math.sin(4 * b) + (761 * e2 ** 3 / 45360) * math.sin(6 * b))
+    return math.degrees(lat), math.degrees(lon)
+
+
+def egms_lees_zip(pad, binnen, uit):
+    """Leest het CSV-bestand in een EGMS-ZIP regel voor regel. Bewaart per vak (lat, lon,
+    zakking = -mean_velocity, std) in de arrays van 'uit', alleen als binnen(lat, lon)."""
+    import zipfile
+    import io
+    import itertools
+    n_in = n_tot = 0
+    with zipfile.ZipFile(pad) as z:
+        naam = next((x for x in z.namelist() if x.lower().endswith(".csv")), None)
+        if not naam:
+            raise RuntimeError(f"geen CSV in {os.path.basename(pad)}")
+        with z.open(naam) as fh:
+            tekst = io.TextIOWrapper(fh, encoding="utf-8", errors="replace", newline="")
+            eerste = tekst.readline()
+            sep = ";" if eerste.count(";") > eerste.count(",") else ","
+            kop = [k.strip().strip('"').lower() for k in eerste.split(sep)]
+            if "easting" in kop and "mean_velocity" in kop:
+                ie, inn, iv = kop.index("easting"), kop.index("northing"), kop.index("mean_velocity")
+                istd = kop.index("mean_velocity_std") if "mean_velocity_std" in kop else None
+                regels = tekst
+            else:  # geen kop: vaste volgorde volgens de productbeschrijving
+                ie, inn, iv, istd = 1, 2, 5, 6
+                regels = itertools.chain([eerste], tekst)
+            m = max(ie, inn, iv, istd or 0) + 1
+            for regel in regels:
+                d = regel.split(sep, m)
+                if len(d) < m:
+                    continue
+                try:
+                    e, nn, v = float(d[ie]), float(d[inn]), float(d[iv])
+                    sd = float(d[istd]) if istd is not None and d[istd].strip() else 0.0
+                except ValueError:
+                    continue
+                n_tot += 1
+                if not (-200 < v < 200):
+                    continue
+                lat, lon = laea_naar_wgs84(e, nn)
+                if not binnen(lat, lon):
+                    continue
+                uit["lat"].append(int(round(lat * 1e6)))
+                uit["lon"].append(int(round(lon * 1e6)))
+                uit["v"].append(int(round(-v * 10)))
+                uit["s"].append(min(32767, int(round(sd * 10))))
+                n_in += 1
+    return n_in, n_tot
+
+
+def _egms_leeg():
+    from array import array
+    return {"lat": array("i"), "lon": array("i"), "v": array("h"), "s": array("h")}
+
+
+def _egms_schrijf(path, punten, info):
+    tmp = path + ".tmp"
+    with gzip.open(tmp, "wb") as fh:
+        kop = json.dumps(dict(info, n=len(punten["lat"]))).encode()
+        fh.write(len(kop).to_bytes(4, "big") + kop)
+        for k in ("lat", "lon", "v", "s"):
+            fh.write(punten[k].tobytes())
+    os.replace(tmp, path)
+
+
+def _egms_lees(path):
+    with gzip.open(path, "rb") as fh:
+        ln = int.from_bytes(fh.read(4), "big")
+        info = json.loads(fh.read(ln).decode())
+        p = _egms_leeg()
+        for k in ("lat", "lon", "v", "s"):
+            p[k].frombytes(fh.read(p[k].itemsize * info["n"]))
+    return p, info
+
+
+def update_egms(cache_dir, args, state, gemeenten):
+    """EGMS-punten uit de cache, of (bij een nieuwe release, eens per --egms-controle dagen
+    gecontroleerd) opnieuw ophalen. Geeft (punten, info) of None."""
+    fp = os.path.join(cache_dir, "egms.bin.gz")
+    oud = None
+    if os.path.exists(fp):
+        try:
+            oud = _egms_lees(fp)
+        except (OSError, ValueError, KeyError, EOFError):
+            oud = None
+    sleutel = os.environ.get("EGMS_SLEUTEL", "").strip()
+    if not sleutel:
+        if oud:
+            log(f"-> EGMS: uit cache (release {oud[1].get('release')}; geen EGMS_SLEUTEL om te controleren)")
+        else:
+            log("-> EGMS: overgeslagen (geen EGMS_SLEUTEL ingesteld)")
+        return oud
+    age = days_since(state.get("egmsControle"))
+    if oud and not args.vernieuw and age is not None and age < args.egms_controle:
+        log(f"-> EGMS: uit cache (release {oud[1].get('release')})")
+        return oud
+    log("-> EGMS: controleren op een nieuwe release")
+    tmpdir = os.path.join(cache_dir, "egms.tmp")
+    try:
+        token = egms_toegang(sleutel)
+        api = args.egms_api.rstrip("/")
+        releases = _egms_json(api + "/releases", token)
+        # het precieze formaat van deze lijst is niet gedocumenteerd: zoek alle 'jjjj-jjjj'
+        namen = sorted(set(re.findall(r"(?<!\d)(\d{4}-\d{4})(?!\d)", json.dumps(releases))),
+                       key=lambda r: (r[5:], r[:4]))
+        if not namen:
+            raise RuntimeError(f"geen releases gevonden ({str(releases)[:200]})")
+        nieuwste = namen[-1]
+        if oud and oud[1].get("release") == nieuwste and not args.vernieuw:
+            state["egmsControle"] = date.today().isoformat()
+            log(f"   geen nieuwe release (nog steeds {nieuwste})")
+            return oud
+        res = _egms_json(api + "/search", token, {"id": None, "bbox": EGMS_BBOX, "levels": ["L3"],
+                                                   "releases": [nieuwste], "productType": "ORTHO-UP"})
+        hits = [h for h in (res.get("hits") or []) if str(h.get("filename", "")).lower().endswith(".zip")
+                and re.search(r"_U_", str(h.get("filename", "")))]
+        if not hits:
+            raise RuntimeError(f"geen tegels gevonden voor {nieuwste} ({res.get('message') or 'leeg antwoord'})")
+        log(f"   release {nieuwste}: {len(hits)} tegels, samen {sum(int(h.get('filesize') or 0) for h in hits) / 1e6:,.0f} MB")
+        if gemeenten:
+            gidx = GebiedIndex(gemeenten)
+            binnen = lambda la, lo: gidx.zoek(la, lo) is not None
+        else:
+            binnen = lambda la, lo: EGMS_BBOX[0][1] <= la <= EGMS_BBOX[1][1] and EGMS_BBOX[0][0] <= lo <= EGMS_BBOX[1][0]
+        os.makedirs(tmpdir, exist_ok=True)
+        # verder waar een vorige run stopte (per tegel bewaard in egms_deel.bin.gz)
+        fdeel = os.path.join(cache_dir, "egms_deel.bin.gz")
+        punten, klaar = _egms_leeg(), []
+        if os.path.exists(fdeel) and not args.vernieuw:
+            try:
+                dp, dinfo = _egms_lees(fdeel)
+                if dinfo.get("release") == nieuwste:
+                    punten, klaar = dp, list(dinfo.get("klaar") or [])
+                    log(f"   verder met ophalen: {len(klaar)} tegels al binnen")
+            except (OSError, ValueError, KeyError, EOFError):
+                pass
+        t_start = time.time()
+        for h in sorted(hits, key=lambda x: x["filename"]):
+            if h["filename"] in klaar:
+                continue
+            if args.egms_max_minuten and time.time() - t_start > args.egms_max_minuten * 60:
+                raise RuntimeError(f"tijdslimiet bereikt na {len(klaar)} van {len(hits)} tegels; de volgende run gaat verder")
+            url = f"{api}/download/{h['filename']}?id={res.get('id')}"
+            dl = os.path.join(tmpdir, os.path.basename(h["filename"]))
+            t0 = time.time()
+            req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "User-Agent": USER_AGENT})
+            for poging in range(1, 4):
+                try:
+                    with urllib.request.urlopen(req, timeout=300) as r, open(dl, "wb") as fh:
+                        while True:
+                            blok = r.read(1 << 20)
+                            if not blok:
+                                break
+                            fh.write(blok)
+                    break
+                except (urllib.error.URLError, OSError) as e:
+                    if poging == 3:
+                        raise RuntimeError(f"download {h['filename']} mislukt ({e})")
+                    time.sleep(10 * poging)
+            n_in, n_tot = egms_lees_zip(dl, binnen, punten)
+            os.remove(dl)
+            klaar.append(h["filename"])
+            _egms_schrijf(fdeel, punten, {"release": nieuwste, "klaar": klaar})
+            log(f"   {h['filename']}: {fmt_int(n_in)} van {fmt_int(n_tot)} vakken in Nederland ({(time.time() - t0) / 60:.1f} min)")
+        if len(punten["lat"]) < 1000 and not args.proef:
+            raise RuntimeError(f"te weinig vakken ontvangen ({len(punten['lat'])})")
+        info = {"release": nieuwste, "opgehaald": date.today().isoformat(), "tegels": len(hits)}
+        _egms_schrijf(fp, punten, info)
+        if os.path.exists(fdeel):
+            os.remove(fdeel)
+        state["egmsControle"] = date.today().isoformat()
+        log(f"   klaar: {fmt_int(len(punten['lat']))} vakken van 100 m (release {nieuwste})")
+        return punten, info
+    except (RuntimeError, ValueError, KeyError, TypeError, OSError, urllib.error.URLError) as e:
+        log(f"   let op: EGMS niet opgehaald ({e.__class__.__name__}: {e})")
+        if oud:
+            log("   oude EGMS-gegevens uit de cache worden gebruikt")
+        return oud
+    finally:
+        if os.path.isdir(tmpdir):
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+EGMS_TEGEL = 0.1          # graden; detailbestanden per tegel van 0,1 x 0,1 graad
+EGMS_ONZEKER = 2.0        # mm/jaar: vakken met een grotere standaardafwijking worden grijs
+
+
+def write_egms(out_dir, egms):
+    """Schrijft egms/overzicht.json (vakken van ~1 en ~5 km, mediaan) en egms/<tx>_<ty>.json
+    (vakken van 100 m) voor de kaart. Geeft de meta-gegevens voor de kaart terug."""
+    import shutil
+    d = os.path.join(out_dir, "egms")
+    if os.path.isdir(d):
+        shutil.rmtree(d)
+    if not egms:
+        return None
+    p, info = egms
+    os.makedirs(d)
+    tegels, grof, fijn = {}, {}, {}
+    for i in range(len(p["lat"])):
+        la, lo, v, sd = p["lat"][i] / 1e6, p["lon"][i] / 1e6, p["v"][i], p["s"][i]
+        onz = 1 if sd > EGMS_ONZEKER * 10 else 0
+        tegels.setdefault((int(math.floor(lo / EGMS_TEGEL)), int(math.floor(la / EGMS_TEGEL))), []).extend(
+            [round(la, 5), round(lo, 5), v, onz])
+        if not onz:
+            fijn.setdefault((int(math.floor(lo / 0.015)), int(math.floor(la / 0.009))), []).append(v)
+            grof.setdefault((int(math.floor(lo / 0.075)), int(math.floor(la / 0.045))), []).append(v)
+    for (tx, ty), arr in tegels.items():
+        write_text(os.path.join(d, f"{tx}_{ty}.json"), json.dumps(arr, separators=(",", ":")))
+
+    def cellen(dic, dx, dy):
+        out = []
+        for (cx, cy), vs in dic.items():
+            if len(vs) >= 3:
+                out.extend([round((cx + 0.5) * dx, 4), round((cy + 0.5) * dy, 4), int(_mediaan(vs)), len(vs)])
+        return out
+    ov = json.dumps({"r1": cellen(fijn, 0.015, 0.009), "r5": cellen(grof, 0.075, 0.045),
+                     "d1": [0.015, 0.009], "d5": [0.075, 0.045], "tegel": EGMS_TEGEL,
+                     "tegels": sorted(f"{tx}_{ty}" for tx, ty in tegels)}, separators=(",", ":"))
+    write_text(os.path.join(d, "overzicht.json"), ov)
+    log(f"EGMS: {fmt_int(len(p['lat']))} vakken, {len(tegels)} detailbestanden, overzicht "
+        f"{len(ov) / 1e6:.1f} MB (release {info.get('release')})")
+    return {"egmsUrl": "egms/overzicht.json?v=" + short_hash(ov), "egmsRelease": info.get("release"),
+            "egmsBron": EGMS_BRON, "egmsTegel": EGMS_TEGEL}
+
+
+def egms_per_gebied(egms, gebieden, rood, geel):
+    """Telling per gebied: zakking in klassen (rood/geel/groen, onzeker = oud)."""
+    if not egms or not gebieden:
+        return None
+    p, _ = egms
+    idx = GebiedIndex(gebieden)
+    tel = [_Telling() for _ in gebieden]
+    for i in range(len(p["lat"])):
+        gi = idx.zoek(p["lat"][i] / 1e6, p["lon"][i] / 1e6)
+        if gi is None:
+            continue
+        v = p["v"][i] / 10.0
+        k = "oud" if p["s"][i] > EGMS_ONZEKER * 10 else ("rood" if v >= rood else "geel" if v >= geel else "groen")
+        tel[gi].voeg(k, v, None)
+    return tel
 
 
 def short_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
 
 
-def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, extra_paden=()):
+def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, extra_paden=(), og_url=""):
     """Website-modus: een lichte index.html die data.json ophaalt; de meetreeksen voor de
     grafiekjes staan apart in reeksen.json en worden na het tekenen van de kaart geladen.
     Bestandsnamen krijgen een ?v=<hash> zodat browsers na een update de nieuwe data pakken."""
@@ -1922,7 +2442,7 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
         '<meta property="og:title" content="Zakkingskaart">',
         f'<meta property="og:description" content="{esc(descr)}">',
         f'<meta property="og:url" content="{esc(site_url)}">',
-    ]
+    ] + _og_beeld(og_url)
     gv = re.sub(r"[^A-Za-z0-9_\-]", "", args.google_verificatie.strip())
     if gv:
         head.append(f'<meta name="google-site-verification" content="{gv}">')
@@ -2016,6 +2536,13 @@ def main():
                     help="alleen dit gebied op de kaart: zuid,west,noord,oost in graden, bv. 52.33,4.85,52.38,4.96")
     ap.add_argument("--zonder-grafieken", action="store_true", help="geen meetreeksen in de kaart (kleiner bestand)")
     ap.add_argument("--niet-openen", action="store_true", help="kaart niet automatisch in de browser openen")
+    ap.add_argument("--zonder-egms", action="store_true",
+                    help="--site: geen satellietlaag (EGMS, Copernicus)")
+    ap.add_argument("--egms-controle", type=int, default=30,
+                    help="--site: om de zoveel dagen kijken of er een nieuwe EGMS-release is (standaard 30)")
+    ap.add_argument("--egms-max-minuten", type=float, default=60,
+                    help="--site: hoogstens zoveel minuten per run aan het ophalen van EGMS-tegels; de volgende run gaat verder")
+    ap.add_argument("--egms-api", default=EGMS_API, help=argparse.SUPPRESS)  # alleen voor testen
     ap.add_argument("--zonder-gebieden", action="store_true",
                     help="--site: geen pagina's per gemeente en per Amsterdamse buurt maken")
     ap.add_argument("--gebieden-ververs", type=int, default=182,
@@ -2189,22 +2716,42 @@ def main():
                 nap_rows, nap_reeksen = build_nap(got[0], got[1], args)
                 nap = (nap_rows, nap_reeksen, state.get("napOpgehaald") or "")
         paden = []
+        site_url = args.site_url.strip()
+        site_url += "" if site_url.endswith("/") else "/"
+        gem = buurten = None
         if not args.zonder_gebieden:
             gem = laad_gebieden(cache_dir, "gemeenten", haal_gemeenten, args, state, 300, 400)
             buurten = laad_gebieden(cache_dir, "ams_buurten", haal_ams_buurten, args, state, 100, 1500) if gem else None
+        egms = None if args.zonder_egms else update_egms(cache_dir, args, state, gem)
+        try:
+            em = write_egms(out_dir, egms)
+            if em:
+                meta.update(em)
+        except Exception as e:  # de satellietlaag mag de kaart nooit tegenhouden
+            log(f"   let op: EGMS-laag niet gemaakt ({e.__class__.__name__}: {e})")
+            import shutil
+            shutil.rmtree(os.path.join(out_dir, "egms"), ignore_errors=True)
+            meta.pop("egmsUrl", None)
+        og_url = ""
+        try:  # voorbeeldplaatje voor gedeelde links
+            dp = os.path.join(out_dir, DEELBEELD)
+            maak_deelbeeld(dp, nap[0] if nap else [], rows, gem, now_y, args)
+            og_url = site_url + DEELBEELD + "?v=" + hashlib.sha256(open(dp, "rb").read()).hexdigest()[:10]
+        except Exception as e:
+            log(f"   let op: voorbeeldplaatje niet gemaakt ({e.__class__.__name__}: {e})")
+        if not args.zonder_gebieden:
             if gem:
-                site_url = args.site_url.strip()
-                site_url += "" if site_url.endswith("/") else "/"
                 try:
                     paden = write_gebieden(out_dir, site_url, "gebied.css?v=" + short_hash(GEBIED_CSS), args, now_y,
-                                           today, nap[0] if nap else [], rows, gem, buurten)
+                                           today, nap[0] if nap else [], rows, gem, buurten, og_url,
+                                           egms if meta.get("egmsUrl") else None)
                 except Exception as e:  # pagina's mogen de kaart nooit tegenhouden
                     log(f"   let op: pagina's per gemeente niet gemaakt ({e.__class__.__name__}: {e})")
                     paden = []
                     import shutil
                     for d in ("gemeente", "gemeenten"):
                         shutil.rmtree(os.path.join(out_dir, d), ignore_errors=True)
-        html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap, paden)
+        html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap, paden, og_url)
         csv_path = os.path.join(out_dir, "meetbouten_analyse.csv")
         if not args.proef:
             state["vorigePublicatie"] = {"datum": today.isoformat(), "meetbouten": len(rows),
@@ -2328,7 +2875,19 @@ table.kv td{padding:1px 0}
 .chart{display:block;margin-top:6px}
 a.raw{display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)}
 .leaflet-popup-content{margin:12px 14px}
+#rond{top:60px;left:58px;width:min(380px,calc(100vw - 76px));padding:10px 12px;max-height:calc(100% - 90px);overflow:auto}
+#rond[hidden]{display:none}
+#rond .rt{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+#rond h2{font-size:14px;margin:0 0 2px;line-height:1.3}
+#rond .x{border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:var(--muted);padding:0 2px}
+#rond .rs{margin:8px 0 0}
+#rond .rs b{font-size:13px}
+#rond .rbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:#eee;margin:4px 0 2px}
+#rond .rbar i{display:block;height:100%}
+#rond .rk{font-size:12px;color:var(--muted)}
+.pop .omg{margin:6px 0 0;font-size:12px;color:#3b3a36;background:#f4f2ec;border-radius:6px;padding:5px 7px}
 @media (max-width:640px){
+  #rond{left:12px;width:calc(100vw - 24px);max-height:45%}
   #legend{width:calc(100vw - 24px);top:auto;bottom:24px;max-height:55%}
   #legend.collapsed .body{display:none}
 }
@@ -2408,6 +2967,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <datalist id="streets"></datalist>
 </form>
 <div id="msg" hidden></div>
+<div id="rond" class="panel" hidden role="region" aria-label="Meetpunten rond het gezochte adres"></div>
 <div id="loading" role="status" aria-live="polite" hidden>Kaartgegevens laden …</div>
 <div id="fbModal" hidden role="dialog" aria-modal="true" aria-labelledby="fbTitle">
   <div class="mbox"><div class="mhead"><div><h2 id="fbTitle">Wat vind je van deze kaart?</h2><div class="sub">Je feedback helpt de kaart te verbeteren.</div></div><button id="fbClose" class="xbtn" type="button" aria-label="Sluiten" style="border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;cursor:pointer">&times;</button></div>
@@ -2444,6 +3004,8 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <p>In Amsterdam gebruikt de kaart de openbare meetboutgegevens van de gemeente en wordt ze wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
     <h3>Heel Nederland: NAP-peilmerken</h3>
     <p>Een NAP-peilmerk is een bronzen bout in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de mediaan van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk beweegt mee met de bodemdaling van de hele omgeving; het zegt dus iets over de plek, niet per se over dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de reeks een onverklaarde sprong bevat, zijn grijs.</p>
+    <h3>Heel Nederland: bodembeweging gemeten door satellieten</h3>
+    <p>De laag &ldquo;Bodembeweging (satelliet)&rdquo; komt van de European Ground Motion Service (EGMS) van het Europese Copernicus-programma. Radarsatellieten meten elke paar dagen de hoogte van het aardoppervlak en van bebouwing en infrastructuur; EGMS rekent dat om naar een gemiddelde verticale snelheid per vak van 100 bij 100 meter, over een periode van vijf jaar. Uitgezoomd zie je de mediaan per vak van ongeveer 5 of 1 kilometer. Anders dan een meetbout of peilmerk meet een vak niet één gebouw, maar de grond en de bebouwing samen: een gebouw op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Vakken met een grote meetonzekerheid zijn grijs. De laag staat standaard uit.</p>
     <h3>Wat de kleuren betekenen</h3>
     <p>De kleur hangt alleen af van hoe snel een meetpunt de laatste jaren is gezakt: groen bij minder dan 1 mm per jaar, geel bij 1 tot 2 mm per jaar, rood bij 2 mm per jaar of meer. Gestabiliseerd: eerst minstens 1,5 en nu minder dan 0,5 mm per jaar. Grijs: geen recente of te weinig metingen. De grenzen van 1 en 2 mm per jaar zijn ook klassegrenzen op de meetboutenkaart van de gemeente Amsterdam, die eveneens van groen via geel naar rood kleurt. De kleuren beschrijven alleen de gemeten snelheid; ze zeggen niet of iets goed of slecht is. Onder &ldquo;Grenzen aanpassen&rdquo; kun je zelf andere grenzen kiezen.</p>
     <h3>Disclaimer</h3>
@@ -2458,7 +3020,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <h3>Privacy</h3>
     <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd. De adressen bij de meetpunten komen uit de openbare gegevens van de gemeente en Rijkswaterstaat; vragen daarover gaan naar de bron (zie &ldquo;Vragen over de gegevens&rdquo;).</p>
     <h3>Bronnen</h3>
-    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. NAP-peilmerken: Rijkswaterstaat (CC0). Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
+    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
   </div></div>
 </div>
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
@@ -2475,6 +3037,10 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <div class="naprow" id="naprow" hidden>
       <label class="row"><input type="checkbox" id="cNap"><i class="sw ring"></i><span class="lbl">NAP-peilmerken<small>Rijkswaterstaat, heel Nederland · eens per 5–15 jaar gemeten</small></span><span class="cnt" id="cnt-nap">–</span></label>
       <p class="note" id="napnote"></p>
+    </div>
+    <div class="naprow" id="egrow" hidden>
+      <label class="row"><input type="checkbox" id="cEgms"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#e6a700,#d7301f);opacity:.6;border-radius:2px"></i><span class="lbl">Bodembeweging (satelliet)<small>Copernicus EGMS · vakken van 100 m · grond en bebouwing samen</small></span></label>
+      <p class="note" id="egnote"></p>
     </div>
     <details id="settings">
       <summary>Grenzen aanpassen</summary>
@@ -2565,7 +3131,7 @@ const KL=["rood","geel","groen","stab","oud"];
 const COL={rood:"#d7301f",geel:"#e6a700",groen:"#1a9850",stab:"#1a9850",oud:"#9a9a9a"};
 const RING="#08306b";
 const DEF={red:M.defaults.red,yellow:M.defaults.yellow,stabEarly:M.defaults.stabEarly,stabNow:M.defaults.stabNow,
-  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{rood:true,geel:true,groen:true,stab:true,oud:true},base:"pdokgrijs",showNap:true};
+  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{rood:true,geel:true,groen:true,stab:true,oud:true},base:"pdokgrijs",showNap:true,showEgms:false};
 let S=JSON.parse(JSON.stringify(DEF));
 try{const s=JSON.parse(localStorage.getItem("zakkingskaart.v1")||"null");if(s){S=Object.assign(S,s);S.show=Object.assign({},DEF.show,s.show||{});if(!s.napKeuze)S.showNap=DEF.showNap;}}catch(e){}
 function save(){try{localStorage.setItem("zakkingskaart.v1",JSON.stringify(S));}catch(e){}}
@@ -2615,7 +3181,7 @@ for(const k in bases){const t=bases[k];if(!t.on||k==="geen")continue;let ok=0,ba
   t.on("tileerror",()=>{bad++;if(!shown&&bad>=6&&ok===0){shown=true;const el=document.getElementById("msg");
     el.textContent="De achtergrondkaart laadt niet. Kies linksonder een andere achtergrond; de meetbouten werken ook zonder.";el.hidden=false;setTimeout(()=>el.hidden=true,8000);}});}
 L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
-map.attributionControl.addAttribution("Meetbouten: Gemeente Amsterdam"+(M.napUrl?" · NAP: Rijkswaterstaat":"")+" · Geen oordeel of advies");
+map.attributionControl.addAttribution("Meetbouten: Gemeente Amsterdam"+(M.napUrl?" · NAP: Rijkswaterstaat":"")+(M.egmsUrl?" · Satelliet: Copernicus EGMS":"")+" · Geen oordeel of advies");
 
 const lineLayer=L.layerGroup().addTo(map), dotLayer=L.layerGroup().addTo(map);
 const inLine=new Uint8Array(B.length);
@@ -2672,6 +3238,7 @@ function styleAll(){
   }
   counts();
   napRefresh(true);
+  egRefresh(true);
 }
 function resize(){
   const sz=sizes();
@@ -2719,6 +3286,7 @@ L.DomEvent.disableClickPropagation(document.getElementById("search"));
 document.getElementById("src").innerHTML=(M.napUrl?"Bronnen: Rijkswaterstaat, NAP-peilmerken (heel Nederland, CC0) en ":"Bron: ")+"Gemeente Amsterdam, meetbouten (api.data.amsterdam.nl), opgehaald "+fmtDate(M.generated)+". "+
   M.count.toLocaleString("nl-NL")+" meetbouten, waarvan "+M.withSeries.toLocaleString("nl-NL")+" met een meetreeks van minstens "+nf(M.minSpan,0)+" jaar. "+
   "Snelheid = verschil tussen de laatste meting en de meest recente meting die minstens "+nf(M.minSpan,0)+" jaar eerder ligt. "+
+  (M.egmsUrl?"Satellietlaag: Copernicus EGMS, release "+esc(String(M.egmsRelease||"").replace("-","–"))+". ":"")+
   "Weergave van openbare meetgegevens, zonder oordeel of advies."+(M.proef?" <b>Proefrun: onvolledige data.</b>":"");
 
 // ---------- popups ----------
@@ -2758,13 +3326,14 @@ function openBout(i){
     '<tr><th>Gemiddeld</th><td>'+(b[I.total]==null?"–":nf(b[I.total])+" mm/jaar")+'</td></tr>'+
     '<tr><th>Totaal gezakt</th><td>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+b[I.n]+(b[I.last]?" · laatste "+fmtDate(b[I.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
-    '</table>'+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Grafiek wordt geladen …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">Grafiek kon niet worden geladen.</p>':"")+
+    '</table>'+omgRegel(omgeving(b[I.lat],b[I.lon],ROND_M,i,-1))+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Grafiek wordt geladen …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">Grafiek kon niet worden geladen.</p>':"")+
     '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · <a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([b[I.lat],b[I.lon]]).setContent(html).openOn(map);
   curPop={i:i,p:p};
   const el=p.getElement&&p.getElement();
   if(el){const a=el.querySelector("a[data-meas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();openMeas(i);});}
   bindLink(el);
+  egPopup(el,b[I.lat],b[I.lon]);
 }
 // "Link naar dit punt": kopieert de link; lukt dat niet, dan gewoon openen.
 function bindLink(el){
@@ -2882,7 +3451,7 @@ function showStreet(key,q){
   const idx=byStreet.get(key);
   const num=q.match(/\s(\d+)/);
   if(num){const n=parseInt(num[1],10);let best=null,bd=1e9;for(const i of idx){const h=houseNo(B[i][I.addr]);if(Math.abs(h-n)<bd){bd=Math.abs(h-n);best=i;}}
-    if(best!=null&&bd<=4){map.setView([B[best][I.lat],B[best][I.lon]],18);setTimeout(()=>openBout(best),300);return;}}
+    if(best!=null&&bd<=4){map.setView([B[best][I.lat],B[best][I.lon]],17);setTimeout(()=>openBout(best),300);toonRond(B[best][I.lat],B[best][I.lon],B[best][I.addr]||q);return;}}
   const bb=L.latLngBounds(idx.map(i=>[B[i][I.lat],B[i][I.lon]]));
   map.fitBounds(bb,{maxZoom:17,padding:[60,60]});
   setTimeout(()=>openList(nameOf.get(key),idx,bb.getCenter()),400);
@@ -2898,12 +3467,80 @@ function zoekPdok(q){
   return fetch(u).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(j=>{
     const d=j&&j.response&&j.response.docs&&j.response.docs[0];if(!d||!d.centroide_ll)return false;
     const m=String(d.centroide_ll).match(/POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);if(!m)return false;
-    const z=({adres:18,postcode:17,weg:16,woonplaats:13,gemeente:12})[d.type]||15;
-    map.setView([parseFloat(m[2]),parseFloat(m[1])],z);
-    say(d.weergavenaam||q);
+    const z=({adres:17,postcode:16,weg:16,woonplaats:13,gemeente:12})[d.type]||15;
+    const la=parseFloat(m[2]),lo=parseFloat(m[1]);
+    map.setView([la,lo],z);
+    if(d.type==="adres"||d.type==="postcode"||d.type==="weg")toonRond(la,lo,d.weergavenaam||q);
+    else{rondSluit();say(d.weergavenaam||q);}
     return true;
   });
 }
+
+// ---------- omgeving: meetpunten binnen een straal ----------
+const ROND_M=250;
+function omgeving(lat,lon,r,skipB,skipN){
+  const kx=111320*Math.cos(lat*Math.PI/180),ky=111320;
+  const nieuw=()=>({n:0,k:{rood:0,geel:0,groen:0,stab:0,oud:0},v:[],laatste:0,dichtst:Infinity});
+  const res={b:nieuw(),p:nieuw(),napKlaar:!!NAP.rows};
+  for(let i=0;i<B.length;i++){
+    if(i===skipB)continue;const b=B[i];
+    const dx=(b[I.lon]-lon)*kx,dy=(b[I.lat]-lat)*ky,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<res.b.dichtst)res.b.dichtst=d;
+    if(d>r)continue;const c=C[i]||"oud",t=res.b;t.n++;t.k[c]++;
+    if(c!=="oud"&&b[I.recent]!=null)t.v.push(b[I.recent]);if(b[I.lastY])t.laatste=Math.max(t.laatste,Math.floor(b[I.lastY]));
+  }
+  if(NAP.rows)for(let i=0;i<NAP.rows.length;i++){
+    if(i===skipN)continue;const q=NAP.rows[i];
+    const dx=(q[NI.lon]-lon)*kx,dy=(q[NI.lat]-lat)*ky,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<res.p.dichtst)res.p.dichtst=d;
+    if(d>r)continue;const c=napCls(q),t=res.p;t.n++;t.k[c]++;
+    if(c!=="oud"&&q[NI.recent]!=null)t.v.push(q[NI.recent]);if(q[NI.lastY])t.laatste=Math.max(t.laatste,Math.floor(q[NI.lastY]));
+  }
+  return res;
+}
+function afstand(m){return m<1000?Math.round(m/10)*10+" m":nf(m/1000,1)+" km";}
+function omgRegel(o){
+  const d=[];
+  if(o.b.v.length)d.push("mediaan "+nf(median(o.b.v))+" mm/jaar van "+o.b.v.length+" andere meetbout"+(o.b.v.length>1?"en":""));
+  if(o.p.v.length)d.push("mediaan "+nf(median(o.p.v))+" mm/jaar van "+o.p.v.length+" ander"+(o.p.v.length>1?"e":"")+" peilmerk"+(o.p.v.length>1?"en":""));
+  return d.length?'<div class="omg">Binnen '+ROND_M+' m: '+d.join("; ")+'.</div>':"";
+}
+const ROND={el:document.getElementById("rond"),cirkel:null};
+function rondSluit(){ROND.el.hidden=true;ROND.terug=false;if(ROND.cirkel){map.removeLayer(ROND.cirkel);ROND.cirkel=null;}}
+function toonRond(lat,lon,naam){
+  if(ROND.cirkel)map.removeLayer(ROND.cirkel);
+  ROND.cirkel=L.circle([lat,lon],{radius:ROND_M,color:RING,weight:2,dashArray:"5 5",fill:false,interactive:false}).addTo(map);
+  const blok=(t,soort,meer,enkel)=>{
+    if(!t.n)return '<p class="rs"><b>'+soort+'</b>: geen binnen '+ROND_M+' m'+(isFinite(t.dichtst)?' (dichtstbijzijnde op '+afstand(t.dichtst)+')':'')+'.</p>';
+    const bar=KL.filter(k=>t.k[k]).map(k=>'<i style="width:'+(100*t.k[k]/t.n).toFixed(1)+'%;background:'+COL[k]+'" title="'+esc(label(k)[0])+': '+t.k[k]+'"></i>').join("");
+    return '<p class="rs"><b>'+t.n+' '+(t.n>1?meer:enkel)+'</b>'+(t.v.length?' · mediaan '+nf(median(t.v))+' mm/jaar ('+t.v.length+' met recente snelheid)':' · geen met een recente snelheid')+
+      '<span class="rbar">'+bar+'</span><span class="rk">'+KL.filter(k=>t.k[k]).map(k=>esc(label(k)[0])+' '+t.k[k]).join(" · ")+(t.laatste?' · laatste meting '+t.laatste:'')+'</span></p>';
+  };
+  const teken=()=>{
+    const o=omgeving(lat,lon,ROND_M);
+    ROND.el.innerHTML='<div class="rt"><div><h2>Rond '+esc(naam)+'</h2><div class="rk">Alle meetpunten binnen '+ROND_M+' m (stippellijn op de kaart)</div></div><button class="x" type="button" aria-label="Sluiten">×</button></div>'+
+      ((o.b.n||o.b.dichtst<3000)?blok(o.b,"Meetbouten","meetbouten","meetbout"):"")+(M.napUrl?(o.napKlaar?blok(o.p,"NAP-peilmerken","NAP-peilmerken","NAP-peilmerk"):'<p class="rs rk">Peilmerken laden …</p>'):"")+
+      (M.egmsUrl?'<div id="rondEg"><p class="rs rk">Satellietmetingen laden …</p></div>':"")+
+      '<p class="rs rk">Gemeten snelheden, zonder oordeel of advies. Klik op een punt voor details.</p>';
+    ROND.el.querySelector(".x").addEventListener("click",rondSluit);
+    ROND.el.hidden=false;
+    if(M.egmsUrl)egRond(lat,lon,ROND_M).then(e=>{
+      const box=document.getElementById("rondEg");if(!box)return;
+      if(!e||!e.n){box.innerHTML='<p class="rs"><b>Satellietmetingen</b>: geen vakken binnen '+ROND_M+' m.</p>';return;}
+      const bar=KL.filter(k=>e.k[k]).map(k=>'<i style="width:'+(100*e.k[k]/e.n).toFixed(1)+'%;background:'+COL[k]+'"></i>').join("");
+      box.innerHTML='<p class="rs"><b>'+e.n+' vakken van 100 m (satelliet)</b>'+(e.v.length?' · '+egZin(median(e.v)):'')+
+        '<span class="rbar">'+bar+'</span><span class="rk">Bodem en bebouwing samen, gemeten door satellieten ('+esc(String(M.egmsRelease||"").replace("-","–"))+').</span></p>';
+    });
+    return o.napKlaar;
+  };
+  if(!teken()&&M.napUrl){if(!S.showNap){S.showNap=true;save();}napRefresh(true);
+    const t=setInterval(()=>{if(NAP.rows){clearInterval(t);if(!ROND.el.hidden)teken();}else if(NAP.state==="fout")clearInterval(t);},200);}
+}
+L.DomEvent.disableClickPropagation(ROND.el);L.DomEvent.disableScrollPropagation(ROND.el);
+// Op mobiel is er geen ruimte voor paneel én pop-up: paneel even weg zolang een pop-up open is.
+map.on("popupopen",()=>{if(!ROND.el.hidden&&matchMedia("(max-width:640px)").matches){ROND.el.hidden=true;ROND.terug=true;}});
+map.on("popupclose",()=>{if(ROND.terug&&ROND.cirkel){ROND.el.hidden=false;}ROND.terug=false;});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!ROND.el.hidden&&["modal","aboutModal","fbModal","intro"].every(id=>{const x=document.getElementById(id);return !x||x.hidden;}))rondSluit();});
 
 // ---------- feedback ----------
 (function(){
@@ -3039,7 +3676,7 @@ function napOpen(i){
     '<tr><th>Recent</th><td>'+(r[NI.recent]==null?"te korte meetreeks":nf(r[NI.recent])+" mm/jaar <span class=m>"+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>")+'</td></tr>'+
     '<tr><th>Hele reeks</th><td>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/jaar <span class=m>"+esc((r[NI.first]||"").slice(0,4))+"–"+esc((r[NI.last]||"").slice(0,4))+"</span>")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+r[NI.n]+(r[NI.last]?" · laatste "+fmtDate(r[NI.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
-    '</table>'+(r[NI.sprong]?'<p class="mnote">De reeks bevat een onverklaarde sprong (mogelijk een herberekening of meetfout); daarom grijs.</p>':"")+ch+
+    '</table>'+omgRegel(omgeving(r[NI.lat],r[NI.lon],ROND_M,-1,i))+(r[NI.sprong]?'<p class="mnote">De reeks bevat een onverklaarde sprong (mogelijk een herberekening of meetfout); daarom grijs.</p>':"")+ch+
     '<p class="mnote">Een peilmerk meet de hoogte t.o.v. NAP, inclusief bodemdaling van de omgeving. Rijkswaterstaat meet het eens per 5–15 jaar.</p>'+
     (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">Alle meetgegevens bekijken</a> · ':"")+'<a class="raw" href="?punt='+encodeURIComponent(r[NI.p])+'" data-link>Link naar dit punt</a>'+
     '<div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat (NAP), CC0</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
@@ -3048,6 +3685,7 @@ function napOpen(i){
   const el=p.getElement&&p.getElement();
   if(el){const a=el.querySelector("a[data-nmeas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();napMeas(i);});}
   bindLink(el);
+  egPopup(el,r[NI.lat],r[NI.lon]);
   if(!NAP.ser)napLoadSer();
 }
 function napQueryUrl(p,fmt){
@@ -3118,6 +3756,120 @@ function napFind(q){
     map.setView([NAP.rows[k][NI.lat],NAP.rows[k][NI.lon]],17);setTimeout(()=>{napRefresh(true);napOpen(k);},300);};
   if(!S.showNap){S.showNap=true;save();}
   if(NAP.rows)go();else{napRefresh(true);const t=setInterval(()=>{if(NAP.rows){clearInterval(t);go();}else if(NAP.state==="fout")clearInterval(t);},150);}
+}
+
+// ---------- EGMS: bodembeweging gemeten door satellieten (Copernicus) ----------
+// Uit: niets geladen. Aan: uitgezoomd vakken van ~5 en ~1 km (mediaan), ingezoomd (zoom 14+) de vakken van 100 m.
+const EG={ov:null,state:"",tegels:new Map(),wacht:new Map(),layer:L.layerGroup(),rend:null,DETAIL:14};
+if(map.createPane){map.createPane("egms");const ep=map.getPane&&map.getPane("egms");if(ep){ep.style.zIndex=330;}}
+EG.rend=L.canvas({pane:"egms",padding:0.3});
+const egRow=document.getElementById("egrow"),egCb=document.getElementById("cEgms"),egNoteEl=document.getElementById("egnote");
+if(M.egmsUrl){egRow.hidden=false;egCb.checked=!!S.showEgms;
+  egCb.addEventListener("change",()=>{S.showEgms=egCb.checked;save();egRefresh(true);});}
+function egNote(t){egNoteEl.textContent=t||"";}
+function egCls(v,onz){if(onz)return"oud";const z=v/10;return z>=S.red?"rood":z>=S.yellow?"geel":"groen";}
+function egTekst(v){const z=v/10;return Math.abs(z)<0.05?"beweegt niet meetbaar":z>0?"zakt "+nf(z,1)+" mm/jaar":"stijgt "+nf(-z,1)+" mm/jaar";}
+function egLaad(){
+  if(EG.state==="laden"||EG.state==="ok")return Promise.resolve();
+  EG.state="laden";egNote("Satellietgegevens laden …");
+  return fetch(M.egmsUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(d=>{EG.ov=d;EG.set=new Set(d.tegels||[]);EG.state="ok";egNote("");egRefresh(true);})
+    .catch(()=>{EG.state="fout";egNote("De satellietgegevens konden niet worden geladen.");});
+}
+function egTegel(k){
+  if(EG.tegels.has(k))return Promise.resolve(EG.tegels.get(k));
+  if(EG.wacht.has(k))return EG.wacht.get(k);
+  const pr=fetch("egms/"+k+".json").then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(a=>{EG.tegels.set(k,a);EG.wacht.delete(k);return a;}).catch(()=>{EG.wacht.delete(k);return [];});
+  EG.wacht.set(k,pr);return pr;
+}
+function egSleutels(bb){
+  const d=EG.ov.tegel,out=[];
+  for(let x=Math.floor(bb.getWest()/d);x<=Math.floor(bb.getEast()/d);x++)
+    for(let y=Math.floor(bb.getSouth()/d);y<=Math.floor(bb.getNorth()/d);y++){const k=x+"_"+y;if(EG.set.has(k))out.push(k);}
+  return out;
+}
+function egVak(lat,lon,hy,hx,v,onz,info){
+  const c=egCls(v,onz);
+  const r=L.rectangle([[lat-hy,lon-hx],[lat+hy,lon+hx]],{renderer:EG.rend,stroke:false,fillColor:COL[c],fillOpacity:c==="oud"?.35:.5});
+  r.on("click",e=>{L.DomEvent.stopPropagation(e);egOpen(lat,lon,v,onz,info);});
+  return r;
+}
+function egOpen(lat,lon,v,onz,info){
+  const html='<div class="pop"><div class="ttl">Bodembeweging (satelliet)</div>'+
+    '<div class="sub">'+(info?"Mediaan van "+info+" vakken van 100 m":"Vak van 100 × 100 m")+' · '+esc(String(M.egmsRelease||"").replace("-","–"))+'</div>'+
+    '<p style="margin:6px 0 0;font-size:14px"><b>'+(onz?"Onzekere meting":egTekst(v))+'</b></p>'+
+    '<p class="mnote">Satellieten meten de hoogte van het aardoppervlak en van bebouwing en infrastructuur samen; per vak is dat een gemiddelde. '+
+    'Een gebouw op palen kan stil staan terwijl de grond eromheen zakt, en andersom. De meetbouten en peilmerken meten één punt aan een gebouw of bouwwerk.</p>'+
+    '<div class="sub" style="margin-top:4px">Bron: '+esc(M.egmsBron||"Copernicus EGMS")+'</div>'+
+    '<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p></div>';
+  L.popup({maxWidth:320,autoPanPadding:[20,20]}).setLatLng([lat,lon]).setContent(html).openOn(map);
+}
+function egRefresh(restyle){
+  if(!M.egmsUrl)return;
+  egCb.checked=!!S.showEgms;
+  if(!S.showEgms){if(map.hasLayer(EG.layer))map.removeLayer(EG.layer);EG.layer.clearLayers();egNote("");return;}
+  if(!map.hasLayer(EG.layer))EG.layer.addTo(map);
+  if(!EG.ov){egLaad();return;}
+  const z=map.getZoom(),bb=map.getBounds().pad(0.2);
+  const tekenRaster=(arr,d,txt)=>{
+    EG.layer.clearLayers();
+    for(let i=0;i<arr.length;i+=4){const la=arr[i],lo=arr[i+1];
+      if(la<bb.getSouth()-d[1]||la>bb.getNorth()+d[1]||lo<bb.getWest()-d[0]||lo>bb.getEast()+d[0])continue;
+      EG.layer.addLayer(egVak(la,lo,d[1]/2,d[0]/2,arr[i+2],0,arr[i+3]));}
+    egNote(txt);
+  };
+  if(z<11){tekenRaster(EG.ov.r5,EG.ov.d5,"Vakken van ± 5 km: mediaan van de satellietmetingen. Zoom in voor meer detail.");return;}
+  const sl=egSleutels(bb);
+  if(z<EG.DETAIL||sl.length>16){tekenRaster(EG.ov.r1,EG.ov.d1,"Vakken van ± 1 km: mediaan. Zoom verder in voor vakken van 100 m.");return;}
+  const zoomNu=z;
+  Promise.all(sl.map(egTegel)).then(lijsten=>{
+    if(map.getZoom()!==zoomNu||!S.showEgms)return;
+    const b2=map.getBounds().pad(0.2);EG.layer.clearLayers();
+    const hy=0.00045,hx=0.00045/Math.cos(map.getCenter().lat*Math.PI/180);
+    for(const a of lijsten)for(let i=0;i<a.length;i+=4){
+      if(!b2.contains([a[i],a[i+1]]))continue;
+      EG.layer.addLayer(egVak(a[i],a[i+1],hy,hx,a[i+2],a[i+3],0));}
+    egNote("Vakken van 100 m. Klik op een vak voor de snelheid.");
+  });
+}
+map.on("moveend",()=>egRefresh(false));
+// Leaflet geeft klikken alleen aan de bovenste tekenlaag. Een klik die daar niets raakt, komt als
+// kaartklik binnen; zoek dan zelf het vakje eronder (eerst NAP-vakjes, dan satellietvakken).
+map.on("click",e=>{
+  for(const lg of [GRID.layer,EG.layer]){
+    if(!map.hasLayer(lg))continue;
+    const hit=lg.getLayers().find(r=>r.getBounds&&r.getBounds().contains(e.latlng));
+    if(hit){hit.fire("click",{latlng:e.latlng});return;}
+  }
+});
+// satellietmetingen binnen een straal (laadt de benodigde tegels)
+function egRond(lat,lon,r){
+  if(!M.egmsUrl)return Promise.resolve(null);
+  const d=M.egmsTegel||0.1,dy=r/111320,dx=r/(111320*Math.cos(lat*Math.PI/180)),sl=[];
+  for(let x=Math.floor((lon-dx)/d);x<=Math.floor((lon+dx)/d);x++)for(let y=Math.floor((lat-dy)/d);y<=Math.floor((lat+dy)/d);y++)
+    if(!EG.set||EG.set.has(x+"_"+y))sl.push(x+"_"+y);
+  {
+    return Promise.all(sl.map(egTegel)).then(lijsten=>{
+      const kx=111320*Math.cos(lat*Math.PI/180),o={n:0,v:[],k:{rood:0,geel:0,groen:0,stab:0,oud:0}};
+      for(const a of lijsten)for(let i=0;i<a.length;i+=4){
+        const ddx=(a[i+1]-lon)*kx,ddy=(a[i]-lat)*111320;if(ddx*ddx+ddy*ddy>r*r)continue;
+        const c=egCls(a[i+2],a[i+3]);o.n++;o.k[c]++;if(c!=="oud")o.v.push(a[i+2]/10);}
+      return o;
+    });
+  }
+}
+function egZin(m){return Math.abs(m)<0.05?"beweegt niet meetbaar":m>0?"mediaan zakking "+nf(m,1)+" mm/jaar":"mediaan stijging "+nf(-m,1)+" mm/jaar";}
+// In een pop-up: hoe beweegt de bodem eromheen volgens de satellieten?
+function egPopup(el,lat,lon){
+  if(!M.egmsUrl||!el)return;
+  egRond(lat,lon,ROND_M).then(o=>{
+    if(!o||!o.v.length||!el.isConnected)return;
+    const t="Bodem en bebouwing (satelliet) binnen "+ROND_M+" m: "+egZin(median(o.v))+" over "+o.v.length+" vakken van 100 m.";
+    const d=el.querySelector(".omg");
+    if(d)d.insertAdjacentHTML("beforeend",'<br>'+esc(t));
+    else{const a=el.querySelector("a.raw");if(a)a.insertAdjacentHTML("beforebegin",'<div class="omg">'+esc(t)+'</div>');}
+  });
 }
 
 buildRows();fillSettings();styleAll();

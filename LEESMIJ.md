@@ -164,6 +164,24 @@ Alle pagina's staan in `sitemap.xml`, en de kaart linkt ernaar ("Per gemeente" i
 
 **Links naar de kaart:** `?kaart=lat,lon,zoom` opent de kaart op een plek, en `?punt=<nummer>` opent een meetbout of peilmerk. Elke pop-up heeft "Link naar dit punt", dat zo'n link kopieert.
 
+## Bodembeweging gemeten door satellieten (EGMS)
+
+De laag "Bodembeweging (satelliet)" komt van de European Ground Motion Service (EGMS) van Copernicus: de verticale bodembeweging per vak van 100 bij 100 meter (product Ortho, Level 3, "Vertical"), over een periode van vijf jaar. Satellieten meten de grond en de bebouwing samen. Dat is iets anders dan een meetbout of peilmerk, en de kaart legt dat ook zo uit.
+
+- **Sleutel:** downloaden kan alleen met een persoonlijke API-sleutel van de Copernicus Land Monitoring Service. Maak die aan in je profiel op land.copernicus.eu (API-token, een JSON-bestand) en zet de hele inhoud in GitHub als **secret** `EGMS_SLEUTEL` (Settings → Secrets and variables → Actions → New repository secret). Zonder sleutel wordt de laag overgeslagen; staan er al gegevens in de cache, dan worden die gebruikt.
+- **Ophalen:** de workflow kijkt om de 30 dagen (`--egms-controle`) of er een nieuwe release is. EGMS brengt er één per jaar uit. Is er een nieuwe, dan haalt hij alle tegels voor Nederland op. Dat zijn een paar GB, die regel voor regel worden verwerkt. Alleen het resultaat wordt bewaard (`cache/egms.bin.gz`). Per run besteedt hij hoogstens 60 minuten aan downloaden (`--egms-max-minuten`). Wat binnen is, staat in `cache/egms_deel.bin.gz`, en de volgende run (ook de dagelijkse afmaakrun) gaat daar verder.
+- **Op de kaart:** de laag staat standaard uit. Uitgezoomd zie je vakken van ongeveer 5 km, daarna van ongeveer 1 km (de mediaan), en vanaf zoom 14 de vakken van 100 m (die worden per tegel van 0,1 graad geladen, `egms/<x>_<y>.json`). Vakken met een standaardafwijking boven 2 mm/jaar zijn grijs ("onzeker"). Zakking is positief, dus `-mean_velocity` uit EGMS.
+- **Elders op de site:** in de pop-ups van meetbouten en peilmerken staat de mediaan van de satellietvakken binnen 250 meter, in "Rond dit adres" een samenvatting, en op de pagina's per gemeente en buurt een paragraaf "Bodembeweging gemeten door satellieten".
+- **Bronvermelding:** Copernicus vraagt om bronvermelding. Die staat in de pop-ups, onder de kaart, in het Over-venster en op de pagina's.
+- Uitzetten kan met `--zonder-egms`.
+
+## Rond dit adres, deellinks en voorbeeldplaatje
+
+- **Rond dit adres:** zoekt iemand een adres, postcode of straat, dan verschijnt linksboven een samenvatting van alle meetpunten binnen 250 meter: meetbouten, NAP-peilmerken en satellietvakken, met per soort de aantallen per kleur en de mediaan. Een stippellijn op de kaart laat de cirkel zien. Bij een plaats of gemeente gebeurt dat niet, want dat gebied is te groot. Op mobiel wijkt het paneel even voor een open pop-up.
+- **Vergelijking in de pop-up:** bij elke meetbout en elk peilmerk staat de mediaan van de andere meetpunten en van de bodem (satelliet) binnen 250 meter.
+- **Voorbeeldplaatje:** het script tekent elke week `deelbeeld.png` (1200 × 630), een kaart van Nederland met de gekleurde meetpunten. De kaart en alle pagina's verwijzen ernaar (`og:image`), zodat gedeelde links er verzorgd uitzien.
+- **Straatnamen op de buurtpagina's:** schrijfwijzen die alleen verschillen in hoofdletters, spaties, accenten of "1e"/"Eerste" worden samengevoegd. Omschrijvingen die geen straatnaam zijn (zoals "??Vervallen mei") staan onder "Overige meetbouten (adres niet eenduidig)". Spelfouten in de brondata blijven staan.
+
 ## Vindbaar in Google
 
 De site heeft een paginatitel, een beschrijving, een `robots.txt` en een `sitemap.xml`. Om Google de site te laten kennen en zoekstatistieken te zien:
