@@ -294,3 +294,16 @@ Klik je op een meetbout of peilmerk, dan zoekt de kaart in de BAG, het landelijk
 - **Zoeken op een plaats of gemeente** geeft een melding met "Cijfers voor gemeente … →".
 - **"Bekijk … op de kaart"** op een pagina geeft `&van=gemeente/<naam>/` mee. De kaart toont dan "← Terug naar …". Alleen bestaande pagina's worden geaccepteerd.
 - **Zoekvelden:** het overzicht van gemeenten en de buurtentabel van Amsterdam filteren al typend.
+- **Straat zoeken (Amsterdam):** de lijst-pop-up van een straat linkt naar de buurtpagina('s) waarin die straat ligt (hoogstens 3, de buurt met de meeste meetbouten eerst). De link springt meteen naar de regel van die straat, die geel oplicht (`#straat-<naam>`).
+
+## Pagina's per straat en per wijk (Amsterdam)
+
+- **Straatpagina's** staan op `gemeente/amsterdam/straat/<straat>/`. Ze tonen alle meetbouten van een straat per huisnummer: kleur, snelheid de laatste jaren, sinds de eerste meting, laatste meting en een link naar de kaart. Ook staat erop in welke buurten en wijken de straat ligt.
+  - Schrijfwijzen van dezelfde straat worden samengevoegd, over buurtgrenzen heen.
+  - Er is een overzicht van alle straten van A tot Z, met een zoekveld.
+- **Wijkpagina's** staan op `gemeente/amsterdam/wijk/<wijk>/`. Een wijk bundelt zijn buurten: meetbouten, peilmerken en satelliet, met een tabel per buurt en een lijst van straten.
+  - De Amsterdam-pagina heeft een tabel per wijk.
+  - De buurtpagina's tonen de wijk in het kruimelpad.
+- **Op de kaart** linkt de pop-up van een meetbout naar de straatpagina. De lijst-pop-up van een straat begint met "Alle meetbouten in de …, per huisnummer". De terugknop werkt ook voor straat- en wijkpagina's.
+- **Op een telefoon** schuift de inhoud van een pop-up van onderen in beeld (maximaal 62 % van het scherm), en het punt blijft erboven zichtbaar.
+- **Aantal pagina's:** ongeveer 1.800, waarvan ongeveer 1.070 straten en 110 wijken.

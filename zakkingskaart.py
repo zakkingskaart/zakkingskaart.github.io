@@ -1592,6 +1592,8 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .uitleg{font-size:15px;color:#3b3a36}
 ul.lijst{columns:2 220px;padding-left:18px}
 .filter{margin:12px 0}
+.anker{display:block;position:relative;top:-80px;visibility:hidden}
+tr:has(.anker:target) td{background:#fff3cd}
 .filter input{width:100%;max-width:420px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
 footer{border-top:1px solid var(--line);background:#fff;margin-top:36px}
 footer .in{font-size:14px;color:var(--muted);padding-top:14px;padding-bottom:24px}
@@ -1671,6 +1673,33 @@ def _verdeling(t, rood, geel, met_stab):
             f'<th class="n">Aantal</th><th class="n">Aandeel</th></tr></thead><tbody>{rijen}</tbody></table></div>')
 
 
+def _samen(ts):
+    """Voegt tellingen samen (bijvoorbeeld de buurten van een wijk)."""
+    t = _Telling()
+    for x in ts:
+        t.n += x.n
+        for k in x.k:
+            t.k[k] += x.k[k]
+        t.recent.extend(x.recent)
+        if x.laatste:
+            t.laatste = max(t.laatste or 0, x.laatste)
+    return t
+
+
+KLASSE_LABEL = {"rood": "Zakt snel", "geel": "Zakt matig", "groen": "Zakt nauwelijks", "stab": "Gestabiliseerd",
+                "oud": "Geen recente metingen"}
+
+
+def _huisnummer(adres):
+    m = re.search(r"\s(\d+)\s*([A-Za-z]?)", adres or "")
+    return (int(m.group(1)), m.group(2).upper()) if m else (10 ** 9, "")
+
+
+def _datum_nl(d):
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(d or ""))
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else (str(d) if d else "–")
+
+
 def _cijfers(items):
     return '<div class="cijfers">' + "".join(
         f'<div class="cijfer"><b>{w}</b><span>{_h(l)}</span></div>' for w, l in items) + "</div>"
@@ -1728,6 +1757,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     # --- Amsterdam: meetbouten en peilmerken per buurt ---
     b_tel, b_nap, b_straat, bslugs, a_tel = [], [], [], [], _Telling()
     bout_buurt = [-1] * len(rows)
+    bout_k = [None] * len(rows)
     if buurten:
         bidx = GebiedIndex(buurten)
         b_tel = [_Telling() for _ in buurten]
@@ -1739,6 +1769,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             a_tel.voeg(k, b["r"]["recent"], b["r"]["lastY"])
             bi = bidx.zoek(b["lat"], b["lon"])
             bout_buurt[ri] = -1 if bi is None else bi
+            bout_k[ri] = k
             if bi is None:
                 geen += 1
                 continue
@@ -1766,6 +1797,55 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     b_egms = egms_per_gebied(egms, buurten, args.rood, args.geel) if (egms and buurten) else None
     release = egms[1].get("release", "") if egms else ""
     toon_buurt = [b_tel[i].n >= 3 or b_nap[i].met_recent >= 1 for i in range(len(buurten or []))]
+
+    # --- Amsterdam: wijken (samengesteld uit de buurten) en straten (over buurtgrenzen heen) ---
+    wijken, wslugs, buurt_wijk = [], [], []
+    straten_a, bout_straat = [], [-1] * len(rows)
+    straat_van_sleutel = {}
+    if ams is not None and buurten:
+        wmap = {}
+        for bi, b in enumerate(buurten):
+            w = (b.get("wijk") or "").strip()
+            if not w:
+                buurt_wijk.append(-1)
+                continue
+            if w not in wmap:
+                wmap[w] = len(wijken)
+                wijken.append({"naam": w, "buurten": []})
+            wijken[wmap[w]]["buurten"].append(bi)
+            buurt_wijk.append(wmap[w])
+        gw = set()
+        for w in wijken:
+            sl = base = _slug(w["naam"])
+            n = 2
+            while sl in gw:
+                sl, n = f"{base}-{n}", n + 1
+            gw.add(sl)
+            wslugs.append(sl)
+        per_sl = {}
+        for ri, b in enumerate(rows):
+            if not b["street"] or _geen_straatnaam(b["street"]):
+                continue
+            st = per_sl.setdefault(_straat_sleutel(b["street"]), {"namen": {}, "rij": []})
+            st["namen"][b["street"]] = st["namen"].get(b["street"], 0) + 1
+            st["rij"].append(ri)
+        tmp = []
+        for sl, st in per_sl.items():
+            naam = max(st["namen"].items(), key=lambda kv: (kv[1], sum(c.isupper() for c in kv[0]), kv[0]))[0]
+            tmp.append((naam, sl, st))
+        tmp.sort(key=lambda x: _sorteer(x[0]))
+        gs = {"index"}
+        for naam, sl, st in tmp:
+            sg = base = _slug(naam)
+            n = 2
+            while sg in gs:
+                sg, n = f"{base}-{n}", n + 1
+            gs.add(sg)
+            si = len(straten_a)
+            straten_a.append({"naam": naam, "slug": sg, "rij": st["rij"], "namen": st["namen"]})
+            straat_van_sleutel[sl] = si
+            for ri in st["rij"]:
+                bout_straat[ri] = si
 
     def egms_blok(t, waar):
         if t is None:
@@ -1837,12 +1917,28 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                          f"Van {fmt_int(a_tel.met_recent)} daarvan is een recente snelheid bekend; doorsnee is dat "
                          f"{_nl(a_tel.mediaan, 2)} mm per jaar.</p>")
             delen.append(_verdeling(a_tel, args.rood, args.geel, True))
+            if straten_a:
+                delen.append(f'<p><a class="knop" href="straat/">Zoek je straat: alle {fmt_int(len(straten_a))} straten met meetbouten</a></p>')
+            if wijken:
+                delen.append("<h2>Per wijk</h2>")
+                wr = []
+                for wi in sorted(range(len(wijken)), key=lambda i: _sorteer(wijken[i]["naam"])):
+                    wt = _samen(b_tel[bi] for bi in wijken[wi]["buurten"])
+                    wr.append(f'<tr><td><a href="wijk/{wslugs[wi]}/">{_h(wijken[wi]["naam"])}</a></td>'
+                              f'<td class="n">{len(wijken[wi]["buurten"])}</td><td class="n">{fmt_int(wt.n)}</td>'
+                              f'<td class="n">{_nl(wt.mediaan, 2)}</td><td class="n">{wt.laatste or "–"}</td></tr>')
+                delen.append('<div class="tabel"><table><thead><tr><th>Wijk</th><th class="n">Buurten</th>'
+                             '<th class="n">Meetbouten</th><th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th>'
+                             '</tr></thead><tbody>' + "".join(wr) + "</tbody></table></div>")
+                delen.append("<h2>Per buurt</h2>")
             rijen = []
             for bi in sorted((i for i in range(len(buurten)) if toon_buurt[i]),
                              key=lambda i: (_sorteer(buurten[i].get("wijk") or ""), _sorteer(buurten[i]["naam"]))):
                 bt = b_tel[bi]
                 rijen.append(f'<tr><td><a href="{_h(bslugs[bi])}/">{_h(buurten[bi]["naam"])}</a></td>'
-                             f'<td>{_h(buurten[bi].get("wijk") or "")}</td><td class="n">{fmt_int(bt.n)}</td>'
+                             + (f'<td><a href="wijk/{wslugs[buurt_wijk[bi]]}/">{_h(buurten[bi].get("wijk") or "")}</a></td>'
+                                if buurt_wijk and buurt_wijk[bi] >= 0 else "<td></td>")
+                             + f'<td class="n">{fmt_int(bt.n)}</td>'
                              f'<td class="n">{_nl(bt.mediaan, 2)}</td><td class="n">{bt.laatste or "–"}</td></tr>')
             delen.append(FILTER_HTML.replace("__PH__", "Zoek een buurt of wijk"))
             delen.append('<div class="tabel f"><table><thead><tr><th>Buurt</th><th>Wijk</th><th class="n">Meetbouten</th>'
@@ -1892,16 +1988,21 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                 for sl, st in b_straat[bi].items():
                     # weergavenaam: de meest gebruikte schrijfwijze (bij gelijkspel die met hoofdletters)
                     naam = max(st["namen"].items(), key=lambda kv: (kv[1], sum(c.isupper() for c in kv[0]), kv[0]))[0]
-                    straten.append((naam if sl else "Overige meetbouten (adres niet eenduidig)", st["t"], sl == ""))
+                    ankers = "" if not sl else "".join(sorted({f'<span class="anker" id="straat-{_slug(v)}"></span>' for v in st["namen"]}))
+                    si = straat_van_sleutel.get(sl, -1) if sl else -1
+                    if si >= 0:
+                        ankers += f'<a href="../straat/{straten_a[si]["slug"]}/">'
+                    straten.append((naam if sl else "Overige meetbouten (adres niet eenduidig)", st["t"], sl == "", ankers,
+                                    "</a>" if si >= 0 else ""))
                 straten.sort(key=lambda x: (x[2], _sorteer(x[0])))
                 if straten:
                     delen.append("<h2>Per straat</h2>")
                     delen.append('<div class="tabel"><table><thead><tr><th>Straat</th><th class="n">Meetbouten</th>'
                                  '<th class="n">Met recente snelheid</th><th class="n">Doorsnee (mm/jaar)</th>'
                                  '<th class="n">Laatste meting</th></tr></thead><tbody>' + "".join(
-                                     f'<tr><td>{"<i>" + _h(s) + "</i>" if overig else _h(s)}</td><td class="n">{fmt_int(st.n)}</td>'
+                                     f'<tr><td>{ankers}{"<i>" + _h(s) + "</i>" if overig else _h(s)}{eind}</td><td class="n">{fmt_int(st.n)}</td>'
                                      f'<td class="n">{fmt_int(st.met_recent)}</td><td class="n">{_nl(st.mediaan, 2)}</td>'
-                                     f'<td class="n">{st.laatste or "–"}</td></tr>' for s, st, overig in straten)
+                                     f'<td class="n">{st.laatste or "–"}</td></tr>' for s, st, overig, ankers, eind in straten)
                                  + "</tbody></table></div>")
             else:
                 delen.append("<p>In deze buurt staan geen meetbouten van de gemeente.</p>")
@@ -1912,15 +2013,166 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             delen.append("<h2>Peilmerken van Rijkswaterstaat</h2>" + napzin(tn, "deze buurt"))
             if b_egms:
                 delen.append(egms_blok(b_egms[bi], "deze buurt"))
-            delen.append(f'<p><a href="../">Alle buurten in Amsterdam</a> · <a href="../../../gemeenten/">Alle gemeenten</a></p>')
+            wi = buurt_wijk[bi] if buurt_wijk else -1
+            delen.append("<p>" + (f'<a href="../wijk/{wslugs[wi]}/">Wijk {_h(wijken[wi]["naam"])}</a> · ' if wi >= 0 else "")
+                         + '<a href="../">Alle buurten in Amsterdam</a> · <a href="../straat/">Alle straten</a> · '
+                           '<a href="../../../gemeenten/">Alle gemeenten</a></p>')
             besch = (f"Openbare meetbouten van de gemeente Amsterdam in {b['naam']}: {fmt_int(t.n)} meetbouten, waarvan "
                      f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid"
                      + (f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
             schrijf(f"gemeente/{aslug}/{bslugs[bi]}", _pagina(
                 f"Zakking in {b['naam']}, Amsterdam | Zakkingskaart", besch,
                 f"{site_url}gemeente/{aslug}/{bslugs[bi]}/", root, root + root_css,
-                [("Zakkingskaart", root), ("Gemeenten", "../../../gemeenten/"), ("Amsterdam", "../"), (b["naam"], None)],
+                [("Zakkingskaart", root), ("Gemeenten", "../../../gemeenten/"), ("Amsterdam", "../")]
+                + ([("Wijk " + wijken[buurt_wijk[bi]]["naam"], f"../wijk/{wslugs[buurt_wijk[bi]]}/")]
+                   if buurt_wijk and buurt_wijk[bi] >= 0 else []) + [(b["naam"], None)],
                 "\n".join(delen), datum, og_url, bool(egms)))
+
+    if ams is not None and buurten:
+        aslug = slugs[ams]
+        uitleg_bout = ("<p class=\"uitleg\">Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. "
+                       "De snelheid van de laatste jaren is berekend uit metingen die minstens 4 jaar uit elkaar liggen. Een "
+                       "meetbout zegt iets over die ene gevel; deze pagina geeft alleen de gemeten snelheden weer. "
+                       "<b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>")
+
+        # --- pagina per wijk ---
+        for wi, w in enumerate(wijken):
+            bis = w["buurten"]
+            t = _samen(b_tel[bi] for bi in bis)
+            tn = _samen(b_nap[bi] for bi in bis)
+            root = "../../../../"
+            bbs = [buurten[bi]["bbox"] for bi in bis]
+            bb = [min(x[0] for x in bbs), min(x[1] for x in bbs), max(x[2] for x in bbs), max(x[3] for x in bbs)]
+            lat, lon = (bb[1] + bb[3]) / 2, (bb[0] + bb[2]) / 2
+            rel = f"gemeente/{aslug}/wijk/{wslugs[wi]}"
+            delen = [f"<h1>Zakking in wijk {_h(w['naam'])}, Amsterdam</h1>",
+                     f'<p class="lead">Hoe snel zakken de gevels in de wijk {_h(w["naam"])}? Deze pagina vat de openbare '
+                     f'meetbouten van de gemeente Amsterdam en de peilmerken van Rijkswaterstaat samen, voor de '
+                     f'{len(bis)} buurten in deze wijk.</p>',
+                     _cijfers([(fmt_int(t.n), "meetbouten"), (fmt_int(t.met_recent), "met een recente snelheid"),
+                               (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
+                               (str(t.laatste or "–"), "laatste meting")]),
+                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 13, 16), rel + "/")}">Bekijk deze wijk op de kaart</a>',
+                     "<h2>Meetbouten</h2>"]
+            if t.n:
+                delen.append(_verdeling(t, args.rood, args.geel, True))
+            br = []
+            for bi in sorted(bis, key=lambda i: _sorteer(buurten[i]["naam"])):
+                bt = b_tel[bi]
+                nm = (f'<a href="../../{bslugs[bi]}/">{_h(buurten[bi]["naam"])}</a>' if toon_buurt[bi]
+                      else _h(buurten[bi]["naam"]))
+                br.append(f'<tr><td>{nm}</td><td class="n">{fmt_int(bt.n)}</td><td class="n">{_nl(bt.mediaan, 2)}</td>'
+                          f'<td class="n">{bt.laatste or "–"}</td></tr>')
+            delen.append("<h2>Per buurt</h2>" + '<div class="tabel"><table><thead><tr><th>Buurt</th><th class="n">Meetbouten</th>'
+                         '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
+                         + "".join(br) + "</tbody></table></div>")
+            sis = sorted({bout_straat[ri] for ri in range(len(rows)) if bout_straat[ri] >= 0 and bout_buurt[ri] in set(bis)},
+                         key=lambda i: _sorteer(straten_a[i]["naam"]))
+            if sis:
+                delen.append("<h2>Straten in deze wijk</h2><ul class=\"lijst\">" + "".join(
+                    f'<li><a href="../../straat/{straten_a[i]["slug"]}/">{_h(straten_a[i]["naam"])}</a></li>' for i in sis) + "</ul>")
+            delen.append(uitleg_bout)
+            delen.append("<h2>Peilmerken van Rijkswaterstaat</h2>" + napzin(tn, "deze wijk"))
+            if b_egms:
+                delen.append(egms_blok(_samen(b_egms[bi] for bi in bis), "deze wijk"))
+            delen.append('<p><a href="../../">Amsterdam</a> · <a href="../../straat/">Alle straten</a> · '
+                         '<a href="../../../../gemeenten/">Alle gemeenten</a></p>')
+            besch = (f"Openbare meetbouten van de gemeente Amsterdam in de wijk {w['naam']}: {fmt_int(t.n)} meetbouten in "
+                     f"{len(bis)} buurten" + (f", doorsnee {_nl(t.mediaan, 2)} mm per jaar" if t.mediaan is not None else "") + ".")
+            schrijf(rel, _pagina(
+                f"Zakking in wijk {w['naam']}, Amsterdam | Zakkingskaart", besch, f"{site_url}{rel}/", root, root + root_css,
+                [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../../"),
+                 ("Wijk " + w["naam"], None)], "\n".join(delen), datum, og_url, bool(egms)))
+
+        # --- pagina per straat ---
+        for si, st in enumerate(straten_a):
+            rij = sorted(st["rij"], key=lambda ri: (_huisnummer(rows[ri]["addr"]), rows[ri]["addr"] or "", rows[ri]["id"]))
+            t = _Telling()
+            for ri in rij:
+                t.voeg(bout_k[ri] or "oud", rows[ri]["r"]["recent"], rows[ri]["r"]["lastY"])
+            root = "../../../../"
+            rel = f"gemeente/{aslug}/straat/{st['slug']}"
+            la = [rows[ri]["lat"] for ri in rij]
+            lo = [rows[ri]["lon"] for ri in rij]
+            bb = [min(lo), min(la), max(lo), max(la)]
+            lat, lon = (bb[1] + bb[3]) / 2, (bb[0] + bb[2]) / 2
+            bcount = {}
+            for ri in rij:
+                if bout_buurt[ri] >= 0:
+                    bcount[bout_buurt[ri]] = bcount.get(bout_buurt[ri], 0) + 1
+            bl = []
+            for bi, _n in sorted(bcount.items(), key=lambda kv: -kv[1]):
+                nm = (f'<a href="../../{bslugs[bi]}/">{_h(buurten[bi]["naam"])}</a>' if toon_buurt[bi] else _h(buurten[bi]["naam"]))
+                wi = buurt_wijk[bi]
+                bl.append(nm + (f' (wijk <a href="../../wijk/{wslugs[wi]}/">{_h(wijken[wi]["naam"])}</a>)' if wi >= 0 else ""))
+            naam = st["naam"]
+            van = f"&amp;van={rel}/"
+            tr = []
+            for ri in rij:
+                b = rows[ri]
+                k = bout_k[ri] or "oud"
+                r = b["r"]
+                rec = _nl(r["recent"], 2) if (k != "oud" and r["recent"] is not None) else "–"
+                tr.append(f'<tr><td>{_h(b["addr"] or b["id"])}</td>'
+                          f'<td><span class="chip{" stab" if k == "stab" else ""}" style="background:{GEBIED_KLEUR[k]}"></span>{KLASSE_LABEL[k]}</td>'
+                          f'<td class="n">{rec}</td><td class="n">{_nl(r["total"], 2) if r["total"] is not None else "–"}</td>'
+                          f'<td class="n">{_datum_nl(r["last"])}</td>'
+                          f'<td><a href="{root}?punt={_h(str(b["id"]))}{van}">kaart</a></td></tr>')
+            delen = [f"<h1>Zakking {_h(naam)}, Amsterdam</h1>",
+                     f'<p class="lead">De gemeente Amsterdam meet in de {_h(naam)} de hoogte van {fmt_int(t.n)} '
+                     f'meetbout{"en" if t.n != 1 else ""} in gevels. Hieronder staat per huisnummer hoe snel die de laatste jaren zakken.</p>',
+                     _cijfers([(fmt_int(t.n), "meetbouten"), (fmt_int(t.met_recent), "met een recente snelheid"),
+                               (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
+                               (str(t.laatste or "–"), "laatste meting")]),
+                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 15, 18), rel + "/")}">Bekijk de {_h(naam)} op de kaart</a>']
+            if bl:
+                delen.append("<p>Ligt in: " + "; ".join(bl) + ".</p>")
+            if t.n >= 3:
+                delen.append(_verdeling(t, args.rood, args.geel, True))
+            delen.append("<h2>Per huisnummer</h2>" + '<div class="tabel"><table><thead><tr><th>Adres</th><th>Kleur op de kaart</th>'
+                         '<th class="n">Laatste jaren (mm/jaar)</th><th class="n">Sinds 1e meting (mm/jaar)</th>'
+                         '<th class="n">Laatste meting</th><th></th></tr></thead><tbody>' + "".join(tr) + "</tbody></table></div>")
+            delen.append(uitleg_bout)
+            delen.append('<p><a href="../">Alle straten in Amsterdam</a> · <a href="../../">Amsterdam</a> · '
+                         '<a href="../../../../gemeenten/">Alle gemeenten</a></p>')
+            besch = (f"Zakking in de {naam} (Amsterdam): {fmt_int(t.n)} meetbouten van de gemeente per huisnummer"
+                     + (f", doorsnee {_nl(t.mediaan, 2)} mm per jaar" if t.mediaan is not None else "")
+                     + (f", laatste meting {t.laatste}" if t.laatste else "") + ".")
+            schrijf(rel, _pagina(
+                f"Zakking {naam}, Amsterdam: meetbouten per huisnummer | Zakkingskaart", besch, f"{site_url}{rel}/", root,
+                root + root_css, [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../../"),
+                                  ("Straten", "../"), (naam, None)], "\n".join(delen), datum, og_url, False))
+
+        # --- overzicht van alle straten ---
+        if straten_a:
+            root = "../../../"
+            per_letter = {}
+            for si, st in enumerate(straten_a):
+                l0 = _sorteer(st["naam"])[:1].upper()
+                per_letter.setdefault(l0 if l0.isalpha() else "#", []).append(si)
+            delen = ["<h1>Zakking per straat in Amsterdam</h1>",
+                     f'<p class="lead">Alle {fmt_int(len(straten_a))} straten in Amsterdam met meetbouten van de gemeente. '
+                     'Klik op een straat voor de meetbouten per huisnummer.</p>',
+                     FILTER_HTML.replace("__PH__", "Zoek je straat")]
+            for l0 in sorted(per_letter):
+                delen.append(f"<h2>{_h(l0)}</h2>")
+                rr = []
+                for si in per_letter[l0]:
+                    st = straten_a[si]
+                    t = _Telling()
+                    for ri in st["rij"]:
+                        t.voeg(bout_k[ri] or "oud", rows[ri]["r"]["recent"], rows[ri]["r"]["lastY"])
+                    rr.append(f'<tr><td><a href="{st["slug"]}/">{_h(st["naam"])}</a></td><td class="n">{fmt_int(t.n)}</td>'
+                              f'<td class="n">{_nl(t.mediaan, 2)}</td><td class="n">{t.laatste or "–"}</td></tr>')
+                delen.append('<div class="tabel f"><table><thead><tr><th>Straat</th><th class="n">Meetbouten</th>'
+                             '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
+                             + "".join(rr) + "</tbody></table></div>")
+            schrijf(f"gemeente/{aslug}/straat", _pagina(
+                "Zakking per straat in Amsterdam | Zakkingskaart",
+                f"Alle {len(straten_a)} straten in Amsterdam met meetbouten van de gemeente: zakking per huisnummer.",
+                f"{site_url}gemeente/{aslug}/straat/", root, root + root_css,
+                [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../"), ("Straten", None)],
+                "\n".join(delen), datum, og_url, False))
 
     # --- overzicht van alle gemeenten ---
     root = "../"
@@ -1951,7 +2203,10 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     nav = {"g": [[slugs[i], g["naam"], str(g.get("code") or "")] for i, g in enumerate(gemeenten)],
            "a": -1 if ams is None else ams,
            "b": [[bslugs[i], b["naam"]] if toon_buurt[i] else None for i, b in enumerate(buurten or [])],
-           "bout": bout_buurt, "nap": nap_gem}
+           "bout": bout_buurt, "nap": nap_gem,
+           "w": [[wslugs[i], w["naam"]] for i, w in enumerate(wijken)],
+           "bw": buurt_wijk,
+           "s": [[st["slug"], st["naam"]] for st in straten_a], "st": bout_straat}
     return paden, nav
 
 
@@ -2444,9 +2699,10 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
         meta["napCount"] = len(nap_rows)
         meta["napService"] = args.nap_service.rstrip("/")
     if nav and "gemeenten/" in extra_paden:
-        meta["gebied"] = {k: nav[k] for k in ("g", "a", "b")}
+        meta["gebied"] = {k: nav[k] for k in ("g", "a", "b", "w", "bw", "s")}
         if len(nav.get("bout") or []) == len(Bdata):
             meta["gebied"]["bout"] = nav["bout"]
+            meta["gebied"]["st"] = nav["st"]
     core = [b[:17] + [None] for b in Bdata]
     if not args.zonder_grafieken:
         reeksen = json.dumps([b[17] for b in Bdata], ensure_ascii=False, separators=(",", ":"))
@@ -2874,6 +3130,16 @@ body.terug #rond{top:98px;max-height:calc(100% - 128px)}
 .pop .meer{margin:6px 0 0;font-size:13px}
 .pop .meer a,#rond .meer a{font-weight:600}
 #rond .meer{margin:8px 0 0;font-size:13px}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:1500;background:#fff;border-radius:14px 14px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.18);max-height:62vh;display:flex;flex-direction:column}
+#sheet[hidden]{display:none}
+#sheet .greep{width:40px;height:4px;border-radius:2px;background:#ccc;margin:8px auto 2px;flex:none}
+#sheet .dicht{position:absolute;top:4px;right:8px;border:0;background:none;font-size:26px;line-height:1;padding:4px 8px;color:var(--muted);cursor:pointer}
+#sheet .body{overflow:auto;padding:0 14px 16px;-webkit-overflow-scrolling:touch}
+#sheet .leaflet-popup{position:static!important;transform:none!important;left:auto!important;top:auto!important;bottom:auto!important;margin:0!important;opacity:1!important}
+#sheet .leaflet-popup-content-wrapper{box-shadow:none!important;border-radius:0!important;padding:0!important;background:none!important}
+#sheet .leaflet-popup-content{margin:4px 0 0!important;width:auto!important;max-width:none!important}
+#sheet .leaflet-popup-tip-container,#sheet .leaflet-popup-close-button{display:none!important}
+body.sheet .leaflet-control-attribution{display:none}
 #loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2500;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:0 6px 20px rgba(0,0,0,.12);font-weight:600;max-width:calc(100vw - 32px);text-align:center}
 #loading.err{background:#fde8e6;color:#7a1c12;border-color:#e9a79f;font-weight:500}
 #loading[hidden]{display:none}
@@ -3011,6 +3277,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
 </form>
 <div id="msg" hidden></div>
 <div id="terug" class="panel" hidden></div>
+<div id="sheet" hidden role="dialog" aria-label="Details"><button type="button" class="dicht" aria-label="Sluiten">×</button><div class="greep"></div><div class="body"></div></div>
 <div id="rond" class="panel" hidden role="region" aria-label="Meetpunten rond het gezochte adres"></div>
 <div id="loading" role="status" aria-live="polite" hidden>Kaartgegevens laden …</div>
 <div id="fbModal" hidden role="dialog" aria-modal="true" aria-labelledby="fbTitle">
@@ -3087,7 +3354,9 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <div class="body">
     <div class="rows" id="rows"></div>
     <p class="note" id="viewnote">De getallen tellen de meetbouten die je nu op de kaart ziet.</p>
-    <p class="note"><b>Amsterdam:</b> een stip is één meetbout in een gevel; een lijn is een stuk straat (de doorsnee van de meetbouten daar). <b>Heel Nederland:</b> open rondjes zijn peilmerken van Rijkswaterstaat. Klik op iets voor details. <b>In de buurt:</b> zoek een adres, of klik met rechts (op een telefoon: lang indrukken) ergens op de kaart.</p>
+    <p class="note"><b>Amsterdam:</b> een stip is één meetbout in een gevel; een lijn is een stuk straat (de doorsnee van de meetbouten daar).</p>
+    <p class="note"><b>Heel Nederland:</b> open rondjes zijn peilmerken van Rijkswaterstaat. Klik op iets voor details.</p>
+    <p class="note"><b>In de buurt:</b> zoek een adres, of klik met rechts (op een telefoon: lang indrukken) ergens op de kaart.</p>
     <div class="naprow" id="boutrow">
       <label class="row"><input type="checkbox" id="cBout"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#e6a700,#d7301f);border-radius:2px;height:4px"></i><span class="lbl">Meetbouten (Amsterdam)<small>Meetpunten van de gemeente in gevels van gebouwen</small></span><span class="cnt" id="cnt-bout">–</span></label>
     </div>
@@ -3387,7 +3656,7 @@ function openBout(i){
     '<tr><th>Totaal gezakt</th><td>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</td></tr>'+
     '<tr><th>Metingen</th><td>'+b[I.n]+(b[I.last]?" · laatste "+fmtDate(b[I.last])+(age!=null?" ("+age+" jaar geleden)":""):"")+'</td></tr>'+
     '</table>'+omgRegel(omgeving(b[I.lat],b[I.lon],ROND_M,i,-1))+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Grafiek wordt geladen …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">Grafiek kon niet worden geladen.</p>':"")+
-    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · '+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+meerHtml(gebBout(i))+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+    '<a class="raw" href="#" data-meas="'+i+'">Alle meetgegevens bekijken</a> · '+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link naar dit punt</a>'+boutMeer(i)+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([b[I.lat],b[I.lon]]).setContent(html).openOn(map);
   curPop={i:i,p:p};
   const el=p.getElement&&p.getElement();
@@ -3414,8 +3683,8 @@ function openList(title,idx,latlng){
   const n={rood:0,geel:0,groen:0,stab:0,oud:0};idx.forEach(i=>n[C[i]]++);
   const mix=KL.filter(k=>n[k]).map(k=>'<span style="white-space:nowrap"><i class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+COL[k]+'"></i> '+n[k]+"</span>").join(" &nbsp;");
   const rows=idx.map(i=>'<tr data-i="'+i+'"><td><i class="sw" style="background:'+COL[C[i]]+'"></i></td><td>'+esc(B[i][I.addr]||B[i][I.id])+'</td><td class="n">'+(B[i][I.recent]==null?"–":nf(B[i][I.recent]))+'</td><td class="n m">'+esc((B[i][I.last]||"").slice(0,4))+"</td></tr>").join("");
-  const html='<div class="pop"><div class="ttl">'+esc(title)+'</div><div class="sub">'+idx.length+" meetbouten"+(med==null?"":" · "+snelZin(med,v.length))+'</div>'+
-    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">Per meetbout: mm per jaar de laatste jaren · jaar van de laatste meting. Klik een regel voor details.</div>'+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
+  const html='<div class="pop"><div class="ttl">'+esc(title)+'</div><div class="sub">'+idx.length+(idx.length>1?" meetbouten":" meetbout")+(med==null?"":" · "+snelZin(med,v.length))+'</div>'+
+    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">Per meetbout: mm per jaar de laatste jaren · jaar van de laatste meting. Klik een regel voor details.</div>'+straatLinks(idx)+'<p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>'+'</div>';
   const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng(latlng).setContent(html).openOn(map);
   const el=p.getElement&&p.getElement();
   if(el)el.querySelectorAll("tr[data-i]").forEach(tr=>tr.addEventListener("click",()=>{const i=+tr.dataset.i;map.setView([B[i][I.lat],B[i][I.lon]],Math.max(map.getZoom(),18));setTimeout(()=>openBout(i),250);}));
@@ -3551,7 +3820,27 @@ function gebCode(code,naam){
   if(i<0&&nm)i=GB.g.findIndex(g=>g[1].toLowerCase()===nm);
   return gebGem(i);
 }
+function slugJs(t){return String(t||"").normalize("NFKD").replace(/[^\x00-\x7f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"gebied";}
+// Straat in de lijst-pop-up: link naar de buurtpagina('s), naar de regel van die straat
+function gebStraat(si){return GB&&GB.a>=0&&GB.s&&si>=0&&GB.s[si]?{u:"gemeente/"+GB.g[GB.a][0]+"/straat/"+GB.s[si][0]+"/",n:GB.s[si][1]}:null;}
+function gebWijk(wi){return GB&&GB.a>=0&&GB.w&&wi>=0&&GB.w[wi]?{u:"gemeente/"+GB.g[GB.a][0]+"/wijk/"+GB.w[wi][0]+"/",n:"wijk "+GB.w[wi][1]}:null;}
+function straatVanBout(i){return GB&&GB.st?gebStraat(GB.st[i]):null;}
+function straatLinks(idx){
+  if(!GB||!GB.bout)return"";const tel=new Map();
+  const sp=straatVanBout(idx[0]);const eerst=sp?'<a href="'+esc(sp.u)+'">Alle meetbouten in de '+esc(sp.n)+', per huisnummer →</a>':"";
+  for(const i of idx){const bi=GB.bout[i];tel.set(bi,(tel.get(bi)||0)+1);}
+  const st=B[idx[0]][I.street];const anker=st?"#straat-"+slugJs(st):"";
+  const uit=[...tel.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(([bi])=>{const x=gebBuurt(bi);
+    if(x)return '<a href="'+esc(x.u+anker)+'">Cijfers voor '+esc(st||"deze straat")+' in '+esc(x.n)+' →</a>';
+    const g=gebGem(GB.a);return g?'<a href="'+esc(g.u)+'">Cijfers voor '+esc(g.n)+' →</a>':"";}).filter(Boolean);
+  const alle=(eerst?[eerst]:[]).concat([...new Set(uit)]);
+  return alle.length?'<p class="meer">'+alle.join("<br>")+'</p>':"";
+}
 function meerHtml(x){return x?'<p class="meer"><a href="'+esc(x.u)+'">Cijfers voor '+esc(x.n)+' →</a></p>':"";}
+function boutMeer(i){const sp=straatVanBout(i),x=gebBout(i);
+  const d=[];if(sp)d.push('<a href="'+esc(sp.u)+'">Alle meetbouten in de '+esc(sp.n)+' →</a>');
+  if(x)d.push('<a href="'+esc(x.u)+'">Cijfers voor '+esc(x.n)+' →</a>');
+  return d.length?'<p class="meer">'+d.join("<br>")+'</p>':"";}
 // gemeente op een plek: via het dichtstbijzijnde adres bij de PDOK Locatieserver (alleen als het nodig is)
 const PDOK_REV="https://api.pdok.nl/bzk/locatieserver/search/v3_1/reverse";
 function gebBuurtPlek(lat,lon){
@@ -3654,6 +3943,25 @@ function rondLink(el,lat,lon,naam,pandM){
 const RONDA='<a class="raw" href="#" data-rond>Alles binnen '+ROND_M+' m</a> · ';
 // Op mobiel is er geen ruimte voor paneel én pop-up: paneel even weg zolang een pop-up open is.
 map.on("popupopen",()=>{if(!ROND.el.hidden&&matchMedia("(max-width:640px)").matches){ROND.el.hidden=true;ROND.terug=true;}});
+// Op een telefoon schuift de inhoud van een pop-up van onderen in beeld (een 'sheet'); het punt blijft zichtbaar.
+const SHEET={el:document.getElementById("sheet"),mob:()=>matchMedia("(max-width:640px)").matches};
+if(SHEET.el){
+  const origPan=L.Popup.prototype._adjustPan;
+  L.Popup.prototype._adjustPan=function(){if(SHEET.mob())return;return origPan&&origPan.apply(this,arguments);};
+  map.on("popupopen",e=>{
+    if(!SHEET.mob())return;const c=e.popup.getElement();if(!c)return;SHEET.cur=e.popup;
+    SHEET.el.querySelector(".body").appendChild(c);SHEET.el.hidden=false;document.body.classList.add("sheet");
+    SHEET.el.querySelector(".body").scrollTop=0;
+    // het punt boven de sheet houden
+    requestAnimationFrame(()=>{const h=SHEET.el.offsetHeight,H=map.getSize().y,pt=map.latLngToContainerPoint(e.popup.getLatLng());
+      const doel=Math.max(60,(H-h)/2);if(pt.y>H-h-30||pt.y<50)map.panBy([0,pt.y-doel],{animate:true});});
+  });
+  map.on("popupclose",e=>{if(e.popup!==SHEET.cur)return;SHEET.cur=null;
+    const c=e.popup.getElement();if(c&&c.parentNode===SHEET.el.querySelector(".body"))c.remove();
+    SHEET.el.hidden=true;document.body.classList.remove("sheet");});
+  SHEET.el.querySelector(".dicht").addEventListener("click",()=>map.closePopup());
+  L.DomEvent.disableClickPropagation(SHEET.el);L.DomEvent.disableScrollPropagation(SHEET.el);
+}
 map.on("popupclose",()=>{if(ROND.terug&&ROND.cirkel){ROND.el.hidden=false;}ROND.terug=false;});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!ROND.el.hidden&&["modal","aboutModal","fbModal","intro"].every(id=>{const x=document.getElementById(id);return !x||x.hidden;}))rondSluit();});
 
@@ -4051,9 +4359,11 @@ buildRows();fillSettings();styleAll();
 (function(){
   let p;try{p=new URLSearchParams(location.search);}catch(e){return;}
   const k=p.get("kaart"),pt=(p.get("punt")||"").trim(),van=(p.get("van")||"").trim();
-  if(GB&&/^gemeente\/[a-z0-9-]+\/([a-z0-9-]+\/)?$/.test(van)){
+  if(GB&&/^gemeente\/[a-z0-9-]+\/(((wijk|straat)\/)?[a-z0-9-]+\/)?$/.test(van)){
     const d=van.split("/");const gi=GB.g.findIndex(g=>g[0]===d[1]);let x=null;
     if(gi>=0&&!d[2])x=gebGem(gi);
+    else if(gi>=0&&gi===GB.a&&d[2]==="wijk"&&GB.w)x=gebWijk(GB.w.findIndex(w=>w[0]===d[3]));
+    else if(gi>=0&&gi===GB.a&&d[2]==="straat"&&GB.s){const y=gebStraat(GB.s.findIndex(w=>w[0]===d[3]));x=y?{u:y.u,n:"de "+y.n}:null;}
     else if(gi>=0&&gi===GB.a&&GB.b){const bi=GB.b.findIndex(b=>b&&b[0]===d[2]);x=gebBuurt(bi);}
     if(x){const t=document.getElementById("terug");
       t.innerHTML='<a href="'+esc(x.u)+'">← Terug naar '+esc(x.n)+'</a><button type="button" aria-label="Verbergen">×</button>';
