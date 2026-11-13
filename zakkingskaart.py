@@ -1720,7 +1720,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     """Schrijft /gemeenten/, /gemeente/<naam>/ en /gemeente/amsterdam/<buurt>/.
     Geeft de lijst met paden (voor de sitemap) en de gegevens voor de links vanuit de kaart terug."""
     import shutil
-    for d in ("gemeente", "gemeenten"):
+    for d in ("gemeente", "gemeenten", "betrouwbaarheid"):
         p = os.path.join(out_dir, d)
         if os.path.isdir(p):
             shutil.rmtree(p)
@@ -1794,6 +1794,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         log(f"         {len(buurten)} Amsterdamse buurten, {fmt_int(len(rows) - geen)} meetbouten toegewezen"
             + (f" ({geen} buiten alle buurten)" if geen else ""))
     g_egms = egms_per_gebied(egms, gemeenten, args.rood, args.geel) if egms else None
+    toets = toets_blokken(egms, nap_rows, nap_gem, rows, now_y, args) if egms else None
     b_egms = egms_per_gebied(egms, buurten, args.rood, args.geel) if (egms and buurten) else None
     release = egms[1].get("release", "") if egms else ""
     toon_buurt = [b_tel[i].n >= 3 or b_nap[i].met_recent >= 1 for i in range(len(buurten or []))]
@@ -1911,6 +1912,10 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         delen.append(uitleg_nap)
         if g_egms:
             delen.append(egms_blok(g_egms[gi], _h(naam)))
+            tg = (toets or {}).get("per_gemeente", {}).get(gi)
+            if tg:
+                delen.append(f"<h3>Hoe goed klopt de satelliet in {_h(naam)}?</h3>" + toets_zin(tg, f"peilmerken in {_h(naam)}")
+                             + toets_uitleg(tg) + f'<p><a href="{root}betrouwbaarheid/">Hoe we dat toetsen</a></p>')
         if gi == ams and buurten:
             delen.append("<h2>Meetbouten per buurt</h2>")
             delen.append(f"<p>In Amsterdam meet de gemeente daarnaast de hoogte van {fmt_int(a_tel.n)} meetbouten in gevels. "
@@ -2174,6 +2179,39 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                 [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../"), ("Straten", None)],
                 "\n".join(delen), datum, og_url, False))
 
+    # --- hoe betrouwbaar is de satelliet? ---
+    if toets:
+        root = "../"
+        rij = [(i, st) for i, st in toets["per_gemeente"].items()]
+        rij.sort(key=lambda x: _sorteer(gemeenten[x[0]]["naam"]))
+        delen = ["<h1>Hoe goed klopt de satelliet?</h1>",
+                 '<p class="lead">De kaart laat zien hoe satellieten de grond zien bewegen, in blokken van 100 bij 100 meter. '
+                 'Dat leggen we naast metingen die met de hand worden gedaan: de peilmerken van Rijkswaterstaat in heel Nederland en '
+                 'de meetbouten van de gemeente Amsterdam. Zo kunt u zelf zien hoe goed ze overeenkomen. We veranderen niets aan de '
+                 'gegevens; we leggen ze alleen naast elkaar.</p>',
+                 "<h2>Tegenover de peilmerken in Nederland</h2>", toets_zin(toets["peilmerken"], "peilmerken"), toets_uitleg(toets["peilmerken"])]
+        if toets["meetbouten"].get("n", 0) >= 10:
+            delen += ["<h2>Tegenover de meetbouten in Amsterdam</h2>", toets_zin(toets["meetbouten"], "meetbouten"),
+                      "<p>Meetbouten zitten in de gevels van gewone huizen en de gemeente meet ze vaak.</p>"]
+        delen += ["<h2>Per gemeente</h2>", "<p>Gemeenten met minstens 10 peilmerken die recent zijn gemeten en een satellietblok in de buurt hebben.</p>",
+                  FILTER_HTML.replace("__PH__", "Zoek je gemeente"),
+                  '<div class="tabel f"><table><thead><tr><th>Gemeente</th><th class="n">Peilmerken</th><th class="n">Minder dan 1 mm verschil</th>'
+                  '<th class="n">Minder dan 2 mm verschil</th><th class="n">Doorsnee verschil (mm/jaar)</th></tr></thead><tbody>'
+                  + "".join(f'<tr><td><a href="../gemeente/{slugs[i]}/">{_h(gemeenten[i]["naam"])}</a></td><td class="n">{fmt_int(st["n"])}</td>'
+                            f'<td class="n">{st["binnen_1"]} van de 100</td><td class="n">{st["binnen_2"]} van de 100</td>'
+                            f'<td class="n">{"+" if st["verschuiving"] > 0 else ""}{_nl(st["verschuiving"], 1)}</td></tr>' for i, st in rij)
+                  + "</tbody></table></div>",
+                  "<h2>Hoe is dit berekend?</h2>",
+                  f"<p>Meegeteld zijn peilmerken en meetbouten met een recente snelheid die minstens tot {_nl(toets['tot'], 1)} zijn gemeten, "
+                  f"want de satelliet meet over {_h(toets['release'].replace('-', '–'))}. Bij elk peilmerk of elke meetbout nemen we het "
+                  "dichtstbijzijnde satellietblok binnen 75 meter; blokken met een onzekere meting tellen niet mee. "
+                  "&lsquo;Doorsnee verschil&rsquo; is het middelste verschil: een plus betekent dat de satelliet meer zakking meet.</p>"]
+        schrijf("betrouwbaarheid", _pagina(
+            "Hoe goed klopt de satelliet? | Zakkingskaart",
+            "De satellietmetingen van bodemdaling naast de peilmerken van Rijkswaterstaat en de meetbouten van Amsterdam: hoe goed komen ze overeen, "
+            "per gemeente.", f"{site_url}betrouwbaarheid/", root, root + root_css,
+            [("Zakkingskaart", root), ("Hoe goed klopt de satelliet?", None)], "\n".join(delen), datum, og_url, True))
+
     # --- overzicht van alle gemeenten ---
     root = "../"
     groepen = sorted(per_prov.items(), key=lambda kv: (kv[0] == "", kv[0].lower()))
@@ -2181,7 +2219,8 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
              '<p class="lead">Per gemeente een samenvatting van de openbare metingen van Rijkswaterstaat: hoeveel '
              'peilmerken er zijn, van hoeveel bekend is hoe snel ze de laatste jaren zakken, en de doorsnee snelheid '
              '(de middelste waarde: de helft zakt sneller, de helft langzamer). '
-             'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.</p>',
+             'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.'
+             + (' <a href="../betrouwbaarheid/">Hoe goed klopt de satelliet?</a>' if toets else "") + '</p>',
              FILTER_HTML.replace("__PH__", "Zoek je gemeente")]
     for prov, idxs in groepen:
         if prov:
@@ -2650,6 +2689,89 @@ def write_egms(out_dir, egms):
             "egmsBron": EGMS_BRON, "egmsTegel": EGMS_TEGEL}
 
 
+def toets_blokken(egms, nap_rows, nap_gem, rows, now_y, args):
+    """Toets: de satellietblokken naast de metingen met de hand (peilmerken in heel Nederland, meetbouten in Amsterdam).
+    Per peilmerk of meetbout met een recente snelheid het dichtstbijzijnde blok (binnen 75 m, niet onzeker). Verandert niets
+    aan de gegevens: legt ze alleen naast elkaar."""
+    p, info = egms
+    rel = info.get("release") or ""
+    m = re.match(r"(\d{4})", rel)
+    tot = (int(m.group(1)) if m else now_y - 5) + 1.5
+    cel = {}
+    for i in range(len(p["lat"])):
+        if p["s"][i] <= EGMS_ONZEKER * 10:
+            cel.setdefault((p["lat"][i] // 1000, p["lon"][i] // 1000), []).append(i)
+
+    def blok(lat, lon):
+        la, lo = int(round(lat * 1e6)), int(round(lon * 1e6))
+        kx = math.cos(math.radians(lat))
+        beste, bd = None, 75.0
+        for dla in (-1, 0, 1):
+            for dlo in (-1, 0, 1):
+                for i in cel.get((la // 1000 + dla, lo // 1000 + dlo), ()):
+                    d = math.hypot((p["lat"][i] - la) * 0.11132, (p["lon"][i] - lo) * 0.11132 * kx)
+                    if d <= bd:
+                        beste, bd = i, d
+        return None if beste is None else p["v"][beste] / 10.0
+
+    def stat(paren):
+        if not paren:
+            return {"n": 0}
+        d = sorted(s_ - h_ for h_, s_ in paren)
+        n = len(d)
+        return {"n": n, "binnen_1": round(100 * sum(1 for x in d if abs(x) <= 1) / n),
+                "binnen_2": round(100 * sum(1 for x in d if abs(x) <= 2) / n),
+                "verschuiving": round(_mediaan(d), 2), "afwijking": round(_mediaan([abs(x) for x in d]), 2)}
+    bouten = []
+    for b in rows or []:
+        r = b["r"]
+        if r.get("recent") is None or (r.get("lastY") or 0) < tot:
+            continue
+        if classify(r, now_y, args.rood, args.geel, 1.5, 0.5, args.max_ouderdom, b["status"]) == "geen recente data":
+            continue
+        v = blok(b["lat"], b["lon"])
+        if v is not None:
+            bouten.append((r["recent"], v))
+    nap, per_g = [], {}
+    for k, r in enumerate(nap_rows or []):
+        if nap_klasse(r, now_y, args.rood, args.geel) == "oud" or r[9] is None or (r[8] or 0) < tot:
+            continue
+        v = blok(r[1], r[2])
+        if v is None:
+            continue
+        nap.append((r[9], v))
+        gi = nap_gem[k] if k < len(nap_gem) else -1
+        if gi >= 0:
+            per_g.setdefault(gi, []).append((r[9], v))
+    uit = {"release": rel, "tot": tot, "meetbouten": stat(bouten), "peilmerken": stat(nap),
+           "per_gemeente": {gi: stat(ps) for gi, ps in per_g.items() if len(ps) >= 10}}
+    log(f"Toets satellietblokken: {uit['peilmerken']['n']} peilmerken"
+        + (f" ({uit['peilmerken']['binnen_1']} van de 100 binnen 1 mm/jaar)" if uit["peilmerken"]["n"] else "")
+        + f", {uit['meetbouten']['n']} meetbouten"
+        + (f" ({uit['meetbouten']['binnen_1']} van de 100)" if uit["meetbouten"]["n"] else ""))
+    return uit
+
+
+def toets_uitleg(st):
+    """Korte uitleg waarom satelliet en peilmerken verschillen; de vraag past zich aan aan de richting van het verschil."""
+    if st and st.get("n", 0) >= 10 and st.get("verschuiving", 0) >= 0.2:
+        return ("<p><b>Waarom zakt de satelliet vaak sneller dan de peilmerken?</b> Peilmerken zitten in stevige gebouwen en bruggen. "
+                "De satelliet meet ook straten, grond en weilanden, en die zakken vaak meer. Ze meten bovendien over andere jaren.</p>")
+    return ("<p><b>Waarom verschillen satelliet en peilmerken?</b> Peilmerken zitten in stevige gebouwen en bruggen. De satelliet meet "
+            "ook straten, grond en weilanden. Ze meten bovendien over andere jaren en ten opzichte van een ander vast punt.</p>")
+
+
+def toets_zin(st, wat):
+    """Eén alinea over hoe goed blokken en metingen met de hand overeenkomen."""
+    if not st or st.get("n", 0) < 10:
+        return ""
+    vs = st["verschuiving"]
+    return (f"<p>We hebben de satellietblokken naast {fmt_int(st['n'])} {wat} gelegd. Bij <b>{st['binnen_1']} van de 100</b> scheelt het "
+            f"minder dan 1 mm per jaar, bij {st['binnen_2']} van de 100 minder dan 2 mm per jaar. "
+            + (f"Doorsnee meet de satelliet {_nl(abs(vs), 1)} mm per jaar {'meer' if vs > 0 else 'minder'} zakking." if abs(vs) >= 0.2
+               else "Doorsnee meten ze ongeveer hetzelfde.") + "</p>")
+
+
 def egms_per_gebied(egms, gebieden, rood, geel):
     """Telling per gebied: zakking in klassen (rood/geel/groen, onzeker = oud)."""
     if not egms or not gebieden:
@@ -2745,7 +2867,8 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
 
     page = (HTML_TEMPLATE
             .replace("__HEAD_EXTRA__", "\n".join(head))
-            .replace("__GEBIEDLINK__", ' · <a href="gemeenten/">Cijfers per gemeente en buurt</a>' if "gemeenten/" in extra_paden else "")
+            .replace("__GEBIEDLINK__", (' · <a href="gemeenten/">Cijfers per gemeente en buurt</a>' if "gemeenten/" in extra_paden else "")
+                     + (' · <a href="betrouwbaarheid/">Hoe goed klopt de satelliet?</a>' if "betrouwbaarheid/" in extra_paden else ""))
             .replace("__LEAFLET_CSS__", "leaflet/leaflet.css?v=" + LEAFLET_VERSION)
             .replace("__LEAFLET_JS__", "leaflet/leaflet.js?v=" + LEAFLET_VERSION)
             .replace("__BOOT__", boot))
@@ -3036,7 +3159,7 @@ def main():
                     log(f"   let op: pagina's per gemeente niet gemaakt ({e.__class__.__name__}: {e})")
                     paden, nav = [], None
                     import shutil
-                    for d in ("gemeente", "gemeenten"):
+                    for d in ("gemeente", "gemeenten", "betrouwbaarheid"):
                         shutil.rmtree(os.path.join(out_dir, d), ignore_errors=True)
         html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap, paden, og_url, nav)
         csv_path = os.path.join(out_dir, "meetbouten_analyse.csv")

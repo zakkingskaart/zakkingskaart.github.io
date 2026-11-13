@@ -176,6 +176,18 @@ De satellietlaag (op de kaart: "Bodemdaling gemeten vanuit de ruimte") komt van 
 - **Bronvermelding:** Copernicus vraagt om bronvermelding. Die staat in de pop-ups, onder de kaart, in het Over-venster en op de pagina's.
 - Uitzetten kan met `--zonder-egms`.
 
+### Hoe goed klopt de satelliet? (toets bij elke bouw)
+
+Bij elke bouw legt het script de satellietblokken naast de metingen met de hand (`toets_blokken`). Er verandert niets aan de gegevens; ze worden alleen naast elkaar gelegd.
+
+- **Peilmerken** (heel Nederland) en **meetbouten** (Amsterdam) tellen mee als ze een recente snelheid hebben en gemeten zijn tot minstens anderhalf jaar na het begin van de satellietperiode. Peilmerken met "geen recente of te weinig metingen" en meetbouten met "geen recente data" tellen niet mee.
+- Per peilmerk of meetbout geldt het dichtstbijzijnde satellietblok binnen 75 meter, zonder onzekere blokken.
+- Per groep: hoeveel van de 100 minder dan 1 en 2 mm per jaar schelen, en het middelste verschil (plus = de satelliet meet meer zakking).
+- **Pagina** `/betrouwbaarheid/` met het totaal, de meetbouten en een tabel per gemeente (minstens 10 peilmerken), plus een korte uitleg waarom satelliet en peilmerken verschillen. De vraag past zich aan: "Waarom zakt de satelliet vaak sneller…" als de satelliet doorsnee meer zakking meet, anders "Waarom verschillen…".
+- Op elke **gemeentepagina** met minstens 10 vergelijkingen een alinea "Hoe goed klopt de satelliet in …?".
+- Links: onder de kaart ("Hoe goed klopt de satelliet?"), op het gemeentenoverzicht en in de sitemap.
+- In de log: `Toets satellietblokken: … peilmerken (… van de 100 binnen 1 mm/jaar), … meetbouten (…)`.
+
 ## Rond dit adres, deellinks en voorbeeldplaatje
 
 - **In de buurt:** klik met rechts ergens op de kaart (op een telefoon: lang indrukken), of kies "Alles binnen 250 m" in de pop-up van een meetpunt of satellietvak. Ook als iemand een adres, postcode of straat zoekt, dan verschijnt er linksboven een samenvatting van alle meetpunten binnen 250 meter: meetbouten, NAP-peilmerken en satellietvakken, met per soort de aantallen per kleur en de mediaan. Een stippellijn op de kaart laat de cirkel zien. Bij een plaats of gemeente gebeurt dat niet, want dat gebied is te groot. Op mobiel wijkt het paneel even voor een open pop-up.
