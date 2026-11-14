@@ -288,8 +288,11 @@ De hele site is er ook in het Engels. Nederlands blijft de standaard; Engels sta
 `/en/`, `/en/gemeenten/`, `/en/gemeente/amsterdam/…`, `/en/betrouwbaarheid/`. De paden zelf blijven Nederlands, zodat elke pagina
 precies één tegenhanger heeft.
 
-- **Kiezen:** rechtsboven op elke pagina staat "English" of "Nederlands"; op de kaart staat die link in de legenda, naast "Over &
-  disclaimer". De link neemt de plek op de kaart mee (`?kaart=`, `?punt=`). Er is geen cookie nodig: de taal zit in het adres.
+- **Kiezen:** rechtsboven op elke pagina staat "English" of "Nederlands"; op de kaart is dat een knop "EN"/"NL" naast "Feedback",
+  en in het welkomstvenster staat een link. De knop neemt de plek op de kaart mee (`?kaart=`, `?punt=`). Er is geen cookie nodig:
+  de taal zit in het adres.
+- **Logo:** een klein beeldmerk (huis met pijl omlaag) staat voor "Zakkingskaart" op de kaart en op alle pagina's, en is ook het
+  icoontje in het browsertabblad.
 - **Zoekmachines:** elke pagina heeft `hreflang`-links naar beide talen (Nederlands is `x-default`), en de sitemap bevat beide.
 - **Gegevens:** de Engelse kaart gebruikt dezelfde bestanden als de Nederlandse (`data.json`, `nap.json`, `egms/…`); er wordt niets
   dubbel opgeslagen. Adressen, straatnamen en omschrijvingen uit de bronnen blijven zoals de bron ze levert.

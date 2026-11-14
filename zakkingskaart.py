@@ -94,6 +94,15 @@ def log(msg=""):
 
 
 # --- Taal: Nederlands standaard, Engels onder /en/ ---------------------------------------------------------
+# Logo: een huis met een pijl omlaag (zelfde beeldmerk als Pro). Klein, maar herkenbaar; ook als favicon.
+LOGO_SVG = ('<svg class="beeldmerk" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">'
+            '<rect width="32" height="32" rx="7" fill="#24507a"/>'
+            '<path d="M8 15.5 16 8.5l8 7V23H8z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>'
+            '<path d="M16 13.2v6.3m-2.6-2.5 2.6 2.6 2.6-2.6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" '
+            'stroke-linejoin="round"/></svg>')
+FAVICON = ('<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,'
+           + urllib.parse.quote(LOGO_SVG.replace(' class="beeldmerk"', '').replace(' aria-hidden="true"', ''), safe=" :/=,")
+           + '">')
 TAAL = "nl"        # de taal van de pagina die nu gemaakt wordt ("nl" of "en")
 SITE_BASIS = ""    # adres van de site zonder /en/, voor de taalkeuze en hreflang
 
@@ -1581,7 +1590,7 @@ a{color:var(--accent)}
 header{background:#fff;border-bottom:1px solid var(--line)}
 header .in,main,footer .in{max-width:860px;margin:0 auto;padding:0 16px}
 header .in{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;padding-bottom:12px}
-header .logo{font-weight:700;text-decoration:none;color:var(--ink);font-size:18px}
+header .logo{font-weight:700;text-decoration:none;color:var(--ink);font-size:18px;display:inline-flex;align-items:center;gap:8px}
 header .kaart{font-weight:600;margin-left:auto}
 header .taal{font-size:13px;border:1px solid var(--line);border-radius:6px;padding:2px 8px;text-decoration:none}
 nav.kruimel{font-size:14px;color:var(--muted);margin:18px 0 4px}
@@ -1653,6 +1662,7 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_ur
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{FAVICON}
 <title>{_h(titel)}</title>
 <meta name="description" content="{_h(beschrijving)}">
 <link rel="canonical" href="{_h(canon)}">
@@ -1666,7 +1676,7 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_ur
 <link rel="stylesheet" href="{_h(css)}">
 </head>
 <body>
-<header><div class="in"><a class="logo" href="{root}">Zakkingskaart</a><a class="kaart" href="{root}">{T("Naar de kaart", "To the map")}</a>{taalkeuze}</div></header>
+<header><div class="in"><a class="logo" href="{root}">{LOGO_SVG}Zakkingskaart</a><a class="kaart" href="{root}">{T("Naar de kaart", "To the map")}</a>{taalkeuze}</div></header>
 <main>
 <nav class="kruimel" aria-label="{T("Kruimelpad", "Breadcrumb")}">{k}</nav>
 {inhoud}
@@ -3491,7 +3501,7 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
             .replace("__HEAD_EXTRA__", "\n".join(kop("nl")))
             .replace("__GEBIEDLINK__", (' · <a href="gemeenten/">Cijfers per gemeente en buurt</a>' if gebied else "")
                      + (' · <a href="betrouwbaarheid/">Hoe goed klopt de satelliet?</a>' if betr else ""))
-            .replace("__TAALLINK__", ' · <a href="en/" id="taalLink" hreflang="en" lang="en">English</a>')
+            .replace("__LOGO__", LOGO_SVG).replace("__FAVICON__", FAVICON).replace("__TAALLINK__", '<a href="en/" id="taalLink" hreflang="en" lang="en" title="English version" aria-label="English version">EN</a>')
             .replace("__INTROTAAL__", ' · <a href="en/" hreflang="en" lang="en">English</a>')
             .replace("__LEAFLET_CSS__", "leaflet/leaflet.css?v=" + LEAFLET_VERSION)
             .replace("__LEAFLET_JS__", "leaflet/leaflet.js?v=" + LEAFLET_VERSION)
@@ -3504,7 +3514,7 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
                .replace("__HEAD_EXTRA__", "\n".join(kop("en")))
                .replace("__GEBIEDLINK__", (' · <a href="gemeenten/">Figures by municipality and neighbourhood</a>' if gebied else "")
                         + (' · <a href="betrouwbaarheid/">How accurate is the satellite?</a>' if betr else ""))
-               .replace("__TAALLINK__", ' · <a href="../" id="taalLink" hreflang="nl" lang="nl">Nederlands</a>')
+               .replace("__LOGO__", LOGO_SVG).replace("__FAVICON__", FAVICON).replace("__TAALLINK__", '<a href="../" id="taalLink" hreflang="nl" lang="nl" title="Nederlandse versie" aria-label="Nederlandse versie">NL</a>')
                .replace("__INTROTAAL__", ' · <a href="../" hreflang="nl" lang="nl">Nederlands</a>')
                .replace("__LEAFLET_CSS__", "../leaflet/leaflet.css?v=" + LEAFLET_VERSION)
                .replace("__LEAFLET_JS__", "../leaflet/leaflet.js?v=" + LEAFLET_VERSION))
@@ -3827,7 +3837,7 @@ def main():
         page = (HTML_TEMPLATE
                 .replace("__HEAD_EXTRA__", "")
                 .replace("__GEBIEDLINK__", "")
-                .replace("__TAALLINK__", "")
+                .replace("__LOGO__", LOGO_SVG).replace("__FAVICON__", FAVICON).replace("__TAALLINK__", "")
                 .replace("__INTROTAAL__", "")
                 .replace("__LEAFLET_CSS__", "https://unpkg.com/leaflet@%s/dist/leaflet.css" % LEAFLET_VERSION)
                 .replace("__LEAFLET_JS__", "https://unpkg.com/leaflet@%s/dist/leaflet.js" % LEAFLET_VERSION)
@@ -3882,6 +3892,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+__FAVICON__
 <title>Zakkingskaart: hoe snel zakken de gebouwen in jouw buurt?</title>
 <meta name="description" content="Onafhankelijke kaart van zakkende gebouwen in Nederland, op basis van open data: de NAP-peilmerken van Rijkswaterstaat en, in Amsterdam, de meetbouten van de gemeente. Zoek je adres en zie hoe snel het de laatste jaren zakt.">
 __HEAD_EXTRA__
@@ -3923,7 +3934,10 @@ body.sheet .leaflet-control-attribution{display:none}
 #loading[hidden]{display:none}
 #legend{top:12px;right:12px;width:300px;max-height:calc(100% - 90px);overflow:auto;padding:12px 14px}
 #legend .head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-#legend h1{font-size:15px;margin:0}
+#legend h1{font-size:16px;margin:0;display:flex;align-items:center;gap:7px}
+#legend h1 .beeldmerk{flex:none;display:block}
+#taalLink{display:inline-flex;align-items:center;border:1px solid var(--line);background:#fff;border-radius:6px;height:26px;padding:0 8px;font-weight:600;color:var(--accent);text-decoration:none;white-space:nowrap}
+#taalLink:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 #legend .toggle{border:1px solid var(--line);background:#fff;border-radius:6px;width:28px;height:26px;cursor:pointer;font:inherit}
 .rows{display:grid;gap:6px;margin:10px 0 6px}
 .row{display:grid;grid-template-columns:18px 22px 1fr auto;align-items:center;gap:6px;cursor:pointer}
@@ -4127,8 +4141,8 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
   <div id="mBody"></div></div>
 </div>
 <aside id="legend" class="panel">
-  <div class="head"><h1>Zakkingskaart</h1><div class="btns"><button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="In- of uitklappen">–</button></div></div>
-  <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>__GEBIEDLINK____TAALLINK__</p>
+  <div class="head"><h1>__LOGO__Zakkingskaart</h1><div class="btns">__TAALLINK__<button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="In- of uitklappen">–</button></div></div>
+  <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>__GEBIEDLINK__</p>
   <div class="body">
     <div class="rows" id="rows"></div>
     <p class="note" id="viewnote">De getallen tellen de meetbouten die je nu op de kaart ziet.</p>
