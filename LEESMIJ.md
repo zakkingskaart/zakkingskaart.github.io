@@ -282,6 +282,24 @@ De kaart is bedoeld voor iedereen, niet alleen voor vakmensen. Daarom:
 
 Het Over-venster heeft een kopje "Begrippen". De verplichte bronvermelding van Copernicus staat er nog volledig bij.
 
+## Engelse versie (`/en/`)
+
+De hele site is er ook in het Engels. Nederlands blijft de standaard; Engels staat onder `/en/` met dezelfde opbouw:
+`/en/`, `/en/gemeenten/`, `/en/gemeente/amsterdam/…`, `/en/betrouwbaarheid/`. De paden zelf blijven Nederlands, zodat elke pagina
+precies één tegenhanger heeft.
+
+- **Kiezen:** rechtsboven op elke pagina staat "English" of "Nederlands"; op de kaart staat die link in de legenda, naast "Over &
+  disclaimer". De link neemt de plek op de kaart mee (`?kaart=`, `?punt=`). Er is geen cookie nodig: de taal zit in het adres.
+- **Zoekmachines:** elke pagina heeft `hreflang`-links naar beide talen (Nederlands is `x-default`), en de sitemap bevat beide.
+- **Gegevens:** de Engelse kaart gebruikt dezelfde bestanden als de Nederlandse (`data.json`, `nap.json`, `egms/…`); er wordt niets
+  dubbel opgeslagen. Adressen, straatnamen en omschrijvingen uit de bronnen blijven zoals de bron ze levert.
+- **Teksten:** de pagina's per gemeente, buurt, wijk en straat gebruiken `T("Nederlands", "English")` in de code. De kaart zelf wordt bij
+  het bouwen vertaald met de tabel `KAART_EN` in `zakkingskaart.py`: per regel een stuk Nederlandse tekst (`@@`) met de Engelse tekst
+  eronder (`==`). Verandert er een Nederlandse tekst op de kaart, dan stopt de bouw met een melding welk stuk niet meer gevonden wordt;
+  pas dan ook `KAART_EN` aan.
+- **Begrippen:** meetbout = settlement bolt, peilmerk = (NAP) benchmark, doorsnee = median, maaiveld = ground level.
+- In het Engels staat in het Over-venster en onderaan dat bij verschillen de Nederlandse tekst geldt.
+
 ## Bouwjaar en aantal adressen per pand (BAG)
 
 Klik je op een meetbout of peilmerk, dan zoekt de kaart in de BAG, het landelijke register van gebouwen en adressen, welk pand daar staat. De pop-up toont dan bijvoorbeeld "Pand: gebouwd in 1905 · 12 adressen", en de omtrek van het pand licht op op de kaart. Dat gebeurt ook in "In de buurt" na het zoeken op een adres of een rechtsklik.

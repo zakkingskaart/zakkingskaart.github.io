@@ -93,8 +93,18 @@ def log(msg=""):
     print(msg, flush=True)
 
 
+# --- Taal: Nederlands standaard, Engels onder /en/ ---------------------------------------------------------
+TAAL = "nl"        # de taal van de pagina die nu gemaakt wordt ("nl" of "en")
+SITE_BASIS = ""    # adres van de site zonder /en/, voor de taalkeuze en hreflang
+
+
+def T(nl, en):
+    """Tekst in de taal van de pagina die nu gemaakt wordt."""
+    return en if TAAL == "en" else nl
+
+
 def fmt_int(n):
-    return f"{n:,}".replace(",", ".")
+    return f"{n:,}" if TAAL == "en" else f"{n:,}".replace(",", ".")
 
 
 # --------------------------------------------------------------------------
@@ -1520,7 +1530,10 @@ def _geen_straatnaam(naam):
 
 
 def _nl(v, d=1):
-    return "–" if v is None else f"{v:.{d}f}".replace(".", ",").replace("-", "−")
+    if v is None:
+        return "–"
+    s = f"{v:.{d}f}".replace("-", "−")
+    return s if TAAL == "en" else s.replace(".", ",")
 
 
 def _h(s):
@@ -1569,7 +1582,8 @@ header{background:#fff;border-bottom:1px solid var(--line)}
 header .in,main,footer .in{max-width:860px;margin:0 auto;padding:0 16px}
 header .in{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;padding-bottom:12px}
 header .logo{font-weight:700;text-decoration:none;color:var(--ink);font-size:18px}
-header .kaart{font-weight:600}
+header .kaart{font-weight:600;margin-left:auto}
+header .taal{font-size:13px;border:1px solid var(--line);border-radius:6px;padding:2px 8px;text-decoration:none}
 nav.kruimel{font-size:14px;color:var(--muted);margin:18px 0 4px}
 nav.kruimel a{color:var(--muted)}
 h1{font-size:28px;line-height:1.2;margin:6px 0 8px}
@@ -1611,21 +1625,31 @@ FILTER_HTML = ('<p class="filter"><input type="search" id="filter" placeholder="
                "t.hidden=!z;var h=t.previousElementSibling;if(h&&h.tagName==='H2'&&h.dataset.p!=='1'){h.hidden=!z;}});});})();</script>")
 
 
-def _og_beeld(url):
+def _og_beeld(url, taal=None):
     if not url:
         return []
+    en = (taal or TAAL) == "en"
     return [f'<meta property="og:image" content="{_h(url)}">',
             f'<meta property="og:image:width" content="{DEELBEELD_W}">',
             f'<meta property="og:image:height" content="{DEELBEELD_H}">',
-            '<meta property="og:image:alt" content="Kaart van Nederland met gekleurde meetpunten: hoe snel zakken ze?">',
+            f'<meta property="og:image:alt" content="{"Map of the Netherlands with coloured measuring points: how fast are they sinking?" if en else "Kaart van Nederland met gekleurde meetpunten: hoe snel zakken ze?"}">',
             '<meta name="twitter:card" content="summary_large_image">']
 
 
 def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_url="", egms=False):
     bron_extra = "; " + _h(EGMS_BRON) if egms else ""
     k = " › ".join(f'<a href="{_h(u)}">{_h(t)}</a>' if u else _h(t) for t, u in kruimel)
+    # het pad van deze pagina binnen de taal, voor de link naar dezelfde pagina in de andere taal
+    basis = SITE_BASIS or canon
+    pad = canon[len(basis) + (3 if TAAL == "en" else 0):] if canon.startswith(basis) else ""
+    ander = (root + "../" + pad) if TAAL == "en" else (root + "en/" + pad)
+    hreflang = (f'<link rel="alternate" hreflang="nl" href="{_h(basis + pad)}">\n'
+                f'<link rel="alternate" hreflang="en" href="{_h(basis + "en/" + pad)}">\n'
+                f'<link rel="alternate" hreflang="x-default" href="{_h(basis + pad)}">') if SITE_BASIS else ""
+    taalkeuze = (f'<a class="taal" href="{_h(ander)}" hreflang="{"nl" if TAAL == "en" else "en"}" '
+                 f'lang="{"nl" if TAAL == "en" else "en"}">{"Nederlands" if TAAL == "en" else "English"}</a>')
     return f"""<!doctype html>
-<html lang="nl">
+<html lang="{TAAL}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1633,22 +1657,25 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_ur
 <meta name="description" content="{_h(beschrijving)}">
 <link rel="canonical" href="{_h(canon)}">
 <meta property="og:type" content="website">
-<meta property="og:locale" content="nl_NL">
+<meta property="og:locale" content="{T("nl_NL", "en_GB")}">
 <meta property="og:title" content="{_h(titel)}">
 <meta property="og:description" content="{_h(beschrijving)}">
 <meta property="og:url" content="{_h(canon)}">
+{hreflang}
 {chr(10).join(_og_beeld(og_url))}
 <link rel="stylesheet" href="{_h(css)}">
 </head>
 <body>
-<header><div class="in"><a class="logo" href="{root}">Zakkingskaart</a><a class="kaart" href="{root}">Naar de kaart</a></div></header>
+<header><div class="in"><a class="logo" href="{root}">Zakkingskaart</a><a class="kaart" href="{root}">{T("Naar de kaart", "To the map")}</a>{taalkeuze}</div></header>
 <main>
-<nav class="kruimel" aria-label="Kruimelpad">{k}</nav>
+<nav class="kruimel" aria-label="{T("Kruimelpad", "Breadcrumb")}">{k}</nav>
 {inhoud}
 </main>
 <footer><div class="in">
-<p>Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat. Deze pagina geeft openbare meetgegevens eenvoudiger weer en geeft geen oordeel of advies over gebouwen, de grond of de waarde ervan. Aan de gegevens kunnen geen rechten worden ontleend. Vragen over de meetgegevens gaan naar de bron: zie <a href="{root}#over">Over &amp; disclaimer</a>.</p>
-<p>Bronnen: Rijkswaterstaat, NAP-peilmerken (CC0); gemeente Amsterdam, meetbouten en gebiedsindeling (CC0); Kadaster, Bestuurlijke Gebieden (CC BY 4.0){bron_extra}. Bijgewerkt: {_h(datum)}.</p>
+<p>{T("Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat. Deze pagina geeft openbare meetgegevens eenvoudiger weer en geeft geen oordeel of advies over gebouwen, de grond of de waarde ervan. Aan de gegevens kunnen geen rechten worden ontleend. Vragen over de meetgegevens gaan naar de bron: zie",
+       "Independent initiative, separate from the municipality and Rijkswaterstaat. This page shows public measurement data in a simpler way and gives no judgement or advice about buildings, the ground or their value. No rights can be derived from the data. Questions about the measurements go to the source: see")} <a href="{root}#over">{T("Over &amp; disclaimer", "About &amp; disclaimer")}</a>.</p>
+<p>{T("Bronnen: Rijkswaterstaat, NAP-peilmerken (CC0); gemeente Amsterdam, meetbouten en gebiedsindeling (CC0); Kadaster, Bestuurlijke Gebieden (CC BY 4.0)",
+       "Sources: Rijkswaterstaat, NAP benchmarks (CC0); City of Amsterdam, settlement bolts and area boundaries (CC0); Kadaster, Administrative Areas (CC BY 4.0)")}{bron_extra}. {T("Bijgewerkt", "Updated")}: {_h(datum)}.</p>
 </div></footer>
 </body>
 </html>
@@ -1656,11 +1683,12 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_ur
 
 
 def _verdeling(t, rood, geel, met_stab):
-    rij = {"rood": ("Zakt snel", f"{_nl(rood)} mm per jaar of meer"),
-           "geel": ("Zakt matig", f"{_nl(geel)} tot {_nl(rood)} mm per jaar"),
-           "groen": ("Zakt nauwelijks", f"minder dan {_nl(geel)} mm per jaar"),
-           "stab": ("Gestabiliseerd", "zakte eerst flink (1,5 mm per jaar of meer), nu bijna niet meer (minder dan 0,5)"),
-           "oud": ("Geen recente of te weinig metingen", "")}
+    rij = {"rood": (T("Zakt snel", "Sinking fast"), T(f"{_nl(rood)} mm per jaar of meer", f"{_nl(rood)} mm per year or more")),
+           "geel": (T("Zakt matig", "Sinking moderately"), T(f"{_nl(geel)} tot {_nl(rood)} mm per jaar", f"{_nl(geel)} to {_nl(rood)} mm per year")),
+           "groen": (T("Zakt nauwelijks", "Hardly sinking"), T(f"minder dan {_nl(geel)} mm per jaar", f"less than {_nl(geel)} mm per year")),
+           "stab": (T("Gestabiliseerd", "Stabilised"), T("zakte eerst flink (1,5 mm per jaar of meer), nu bijna niet meer (minder dan 0,5)",
+                                                        "sank a lot at first (1.5 mm per year or more), now hardly at all (less than 0.5)")),
+           "oud": (T("Geen recente of te weinig metingen", "No recent or too few measurements"), "")}
     klassen = [k for k in GEBIED_KLASSEN if met_stab or k != "stab"]
     balk = "".join(f'<i style="width:{100.0 * t.k[k] / t.n:.2f}%;background:{GEBIED_KLEUR[k]}" title="{rij[k][0]}"></i>'
                    for k in klassen if t.n and t.k[k])
@@ -1668,9 +1696,9 @@ def _verdeling(t, rood, geel, met_stab):
         f'<tr><td><span class="chip{" stab" if k == "stab" else ""}" style="background:{GEBIED_KLEUR[k]}"></span>'
         f'{rij[k][0]}</td><td>{rij[k][1]}</td><td class="n">{fmt_int(t.k[k])}</td>'
         f'<td class="n">{_nl(100.0 * t.k[k] / t.n, 0) if t.n else "–"}%</td></tr>' for k in klassen)
-    return (f'<div class="balk" role="img" aria-label="Verdeling over de kleuren">{balk}</div>'
-            f'<div class="tabel"><table><thead><tr><th>Kleur op de kaart</th><th>Snelheid de laatste jaren</th>'
-            f'<th class="n">Aantal</th><th class="n">Aandeel</th></tr></thead><tbody>{rijen}</tbody></table></div>')
+    return (f'<div class="balk" role="img" aria-label="{T("Verdeling over de kleuren", "Distribution over the colours")}">{balk}</div>'
+            f'<div class="tabel"><table><thead><tr><th>{T("Kleur op de kaart", "Colour on the map")}</th><th>{T("Snelheid de laatste jaren", "Rate in recent years")}</th>'
+            f'<th class="n">{T("Aantal", "Number")}</th><th class="n">{T("Aandeel", "Share")}</th></tr></thead><tbody>{rijen}</tbody></table></div>')
 
 
 def _samen(ts):
@@ -1686,8 +1714,17 @@ def _samen(ts):
     return t
 
 
-KLASSE_LABEL = {"rood": "Zakt snel", "geel": "Zakt matig", "groen": "Zakt nauwelijks", "stab": "Gestabiliseerd",
-                "oud": "Geen recente metingen"}
+_KLASSE_LABEL = {"rood": ("Zakt snel", "Sinking fast"), "geel": ("Zakt matig", "Sinking moderately"),
+                 "groen": ("Zakt nauwelijks", "Hardly sinking"), "stab": ("Gestabiliseerd", "Stabilised"),
+                 "oud": ("Geen recente metingen", "No recent measurements")}
+
+
+class _Labels(dict):
+    def __getitem__(self, k):
+        return T(*_KLASSE_LABEL[k])
+
+
+KLASSE_LABEL = _Labels({k: None for k in _KLASSE_LABEL})
 
 
 def _huisnummer(adres):
@@ -1697,7 +1734,9 @@ def _huisnummer(adres):
 
 def _datum_nl(d):
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(d or ""))
-    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else (str(d) if d else "–")
+    if not m:
+        return str(d) if d else "–"
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if TAAL == "en" else f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
 
 
 def _cijfers(items):
@@ -1851,19 +1890,29 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
     def egms_blok(t, waar):
         if t is None:
             return ""
+        kop = T("Bodemdaling gemeten vanuit de ruimte", "Subsidence measured from space")
         if not t.n:
-            return (f"<h2>Bodemdaling gemeten vanuit de ruimte</h2><p>Voor {waar} zijn geen satellietmetingen "
-                    f"beschikbaar.</p>")
-        return (f"<h2>Bodemdaling gemeten vanuit de ruimte</h2>"
-                f"<p>Satellieten van de Europese Unie meten de hoogte van de grond. In {waar} gaat het om {fmt_int(t.n)} "
-                f"blokken van 100 bij 100 meter. Doorsnee zakt de grond daar {_nl(t.mediaan, 1)} mm per jaar "
-                f"(gemeten {_h(release.replace('-', '–'))}).</p>"
-                + _verdeling(t, args.rood, args.geel, False).replace("Geen recente of te weinig metingen", "Onzekere meting")
-                .replace("<th>Snelheid de laatste jaren</th>", f"<th>Snelheid {_h(release.replace('-', '–'))}</th>")
-                + "<p class=\"uitleg\">Een satelliet meet grond, straten en gebouwen samen; per blok van 100 meter is dat "
-                  "een gemiddelde. Een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Alleen waar "
-                  "iets het radarsignaal goed terugkaatst (daken, wegen) is gemeten; in weilanden en op water niet. "
-                  "Bron: Copernicus, het aardobservatieprogramma van de EU (" + _h(EGMS_BRON) + ").</p>")
+            return (f"<h2>{kop}</h2><p>" + T(f"Voor {waar} zijn geen satellietmetingen beschikbaar.",
+                                              f"No satellite measurements are available for {waar}.") + "</p>")
+        per = _h(release.replace('-', '–'))
+        return (f"<h2>{kop}</h2><p>"
+                + T(f"Satellieten van de Europese Unie meten de hoogte van de grond. In {waar} gaat het om {fmt_int(t.n)} "
+                    f"blokken van 100 bij 100 meter. Doorsnee zakt de grond daar {_nl(t.mediaan, 1)} mm per jaar (gemeten {per}).",
+                    f"European Union satellites measure the height of the ground. In {waar} this covers {fmt_int(t.n)} "
+                    f"blocks of 100 by 100 metres. The typical (median) subsidence there is {_nl(t.mediaan, 1)} mm per year (measured {per}).")
+                + "</p>"
+                + _verdeling(t, args.rood, args.geel, False).replace(T("Geen recente of te weinig metingen", "No recent or too few measurements"),
+                                                                     T("Onzekere meting", "Uncertain measurement"))
+                .replace(f"<th>{T('Snelheid de laatste jaren', 'Rate in recent years')}</th>", f"<th>{T('Snelheid', 'Rate')} {per}</th>")
+                + "<p class=\"uitleg\">"
+                + T("Een satelliet meet grond, straten en gebouwen samen; per blok van 100 meter is dat "
+                    "een gemiddelde. Een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Alleen waar "
+                    "iets het radarsignaal goed terugkaatst (daken, wegen) is gemeten; in weilanden en op water niet. "
+                    "Bron: Copernicus, het aardobservatieprogramma van de EU (",
+                    "A satellite measures ground, streets and buildings together; for each block of 100 metres that is an "
+                    "average. A house on piles can stand still while the street in front of it sinks, and vice versa. Only where "
+                    "something reflects the radar signal well (roofs, roads) is there a measurement; not in meadows or on water. "
+                    "Source: Copernicus, the EU's Earth observation programme (") + _h(EGMS_BRON) + ").</p>")
 
     def schrijf(rel, html):
         p = os.path.join(out_dir, rel, "index.html")
@@ -1873,19 +1922,28 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
 
     def napzin(t, waar):
         if not t.n:
-            return f"<p>In {waar} liggen geen peilmerken van Rijkswaterstaat.</p>"
-        s = (f"<p>In {waar} liggen {fmt_int(t.n)} peilmerken van Rijkswaterstaat. "
-             f"Van {fmt_int(t.met_recent)} daarvan is bekend hoe snel ze de laatste jaren zakken")
+            return T(f"<p>In {waar} liggen geen peilmerken van Rijkswaterstaat.</p>",
+                     f"<p>There are no Rijkswaterstaat benchmarks in {waar}.</p>")
+        s = T(f"<p>In {waar} liggen {fmt_int(t.n)} peilmerken van Rijkswaterstaat. "
+              f"Van {fmt_int(t.met_recent)} daarvan is bekend hoe snel ze de laatste jaren zakken",
+              f"<p>There are {fmt_int(t.n)} Rijkswaterstaat benchmarks in {waar}. "
+              f"For {fmt_int(t.met_recent)} of them we know how fast they have been sinking in recent years")
         if t.met_recent:
-            s += f"; doorsnee is dat {_nl(t.mediaan, 2)} mm per jaar"
+            s += T(f"; doorsnee is dat {_nl(t.mediaan, 2)} mm per jaar", f"; the median is {_nl(t.mediaan, 2)} mm per year")
         return s + ".</p>"
 
-    uitleg_nap = ("<p class=\"uitleg\">Een peilmerk (NAP-peilmerk) is een metalen boutje in een huis, brug of ander bouwwerk. "
-                  "Rijkswaterstaat meet eens per 5 tot 15 jaar hoe hoog het ligt. De snelheid van de laatste jaren is berekend "
-                  "uit metingen die minstens 8 jaar uit elkaar liggen. Peilmerken die meer dan 20 jaar niet zijn gemeten, of "
-                  "waarvan de metingen een onverklaarbare sprong maken, tellen als &lsquo;geen recente of te weinig metingen&rsquo;. "
-                  "Een peilmerk zakt mee met de grond van de hele omgeving; het zegt iets over de plek, niet per se over één gebouw. "
-                  "<b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>")
+    uitleg_nap = T("<p class=\"uitleg\">Een peilmerk (NAP-peilmerk) is een metalen boutje in een huis, brug of ander bouwwerk. "
+                   "Rijkswaterstaat meet eens per 5 tot 15 jaar hoe hoog het ligt. De snelheid van de laatste jaren is berekend "
+                   "uit metingen die minstens 8 jaar uit elkaar liggen. Peilmerken die meer dan 20 jaar niet zijn gemeten, of "
+                   "waarvan de metingen een onverklaarbare sprong maken, tellen als &lsquo;geen recente of te weinig metingen&rsquo;. "
+                   "Een peilmerk zakt mee met de grond van de hele omgeving; het zegt iets over de plek, niet per se over één gebouw. "
+                   "<b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>",
+                   "<p class=\"uitleg\">A benchmark (NAP benchmark) is a small metal bolt in a house, bridge or other structure. "
+                   "Rijkswaterstaat measures its height once every 5 to 15 years. The rate for recent years is calculated "
+                   "from measurements at least 8 years apart. Benchmarks that have not been measured for more than 20 years, or "
+                   "whose measurements show an unexplained jump, count as &lsquo;no recent or too few measurements&rsquo;. "
+                   "A benchmark moves with the ground of the whole area; it says something about the place, not necessarily about one building. "
+                   "The <b>median</b> is the middle value: half sink faster, half slower.</p>")
 
     # --- pagina per gemeente ---
     per_prov = {}
@@ -1897,16 +1955,20 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         naam = g["naam"]
         bb = g["bbox"]
         lat, lon = (bb[1] + bb[3]) / 2, (bb[0] + bb[2]) / 2
-        delen = [f'<h1>Zakking in {_h(naam)}</h1>',
-                 f'<p class="lead">Hoe snel zakken gebouwen en andere bouwwerken in {_h(naam)}? Deze pagina vat de '
-                 f'openbare metingen van Rijkswaterstaat samen'
-                 + (", en de meetbouten van de gemeente Amsterdam per buurt" if gi == ams and buurten else "") + ".</p>",
-                 _cijfers([(fmt_int(t.n), "peilmerken"),
-                           (fmt_int(t.met_recent), "met een recente snelheid"),
-                           (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
-                           (str(t.laatste or "–"), "laatste meting")]),
-                 f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb), "gemeente/" + slugs[gi] + "/")}">Bekijk {_h(naam)} op de kaart</a>',
-                 "<h2>Peilmerken van Rijkswaterstaat</h2>", napzin(t, _h(naam))]
+        delen = [T(f'<h1>Zakking in {_h(naam)}</h1>', f'<h1>Subsidence in {_h(naam)}</h1>'),
+                 '<p class="lead">' + T(f'Hoe snel zakken gebouwen en andere bouwwerken in {_h(naam)}? Deze pagina vat de '
+                                        f'openbare metingen van Rijkswaterstaat samen',
+                                        f'How fast are buildings and other structures in {_h(naam)} sinking? This page summarises '
+                                        f'the public measurements of Rijkswaterstaat')
+                 + (T(", en de meetbouten van de gemeente Amsterdam per buurt", ", and the City of Amsterdam's settlement bolts per neighbourhood")
+                    if gi == ams and buurten else "") + ".</p>",
+                 _cijfers([(fmt_int(t.n), T("peilmerken", "benchmarks")),
+                           (fmt_int(t.met_recent), T("met een recente snelheid", "with a recent rate")),
+                           (_nl(t.mediaan, 2) + (T(" mm/jaar", " mm/year") if t.mediaan is not None else ""), T("doorsnee snelheid", "median rate")),
+                           (str(t.laatste or "–"), T("laatste meting", "latest measurement"))]),
+                 f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb), "gemeente/" + slugs[gi] + "/")}">'
+                 + T(f'Bekijk {_h(naam)} op de kaart', f'View {_h(naam)} on the map') + '</a>',
+                 T("<h2>Peilmerken van Rijkswaterstaat</h2>", "<h2>Rijkswaterstaat benchmarks</h2>"), napzin(t, _h(naam))]
         if t.n:
             delen.append(_verdeling(t, args.rood, args.geel, False))
         delen.append(uitleg_nap)
@@ -1914,28 +1976,35 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             delen.append(egms_blok(g_egms[gi], _h(naam)))
             tg = (toets or {}).get("per_gemeente", {}).get(gi)
             if tg:
-                delen.append(f"<h3>Hoe goed klopt de satelliet in {_h(naam)}?</h3>" + toets_zin(tg, f"peilmerken in {_h(naam)}")
-                             + toets_uitleg(tg) + f'<p><a href="{root}betrouwbaarheid/">Hoe we dat toetsen</a></p>')
+                delen.append(T(f"<h3>Hoe goed klopt de satelliet in {_h(naam)}?</h3>", f"<h3>How accurate is the satellite in {_h(naam)}?</h3>")
+                             + toets_zin(tg, T(f"peilmerken in {_h(naam)}", f"benchmarks in {_h(naam)}"))
+                             + toets_uitleg(tg) + f'<p><a href="{root}betrouwbaarheid/">{T("Hoe we dat toetsen", "How we test this")}</a></p>')
         if gi == ams and buurten:
-            delen.append("<h2>Meetbouten per buurt</h2>")
-            delen.append(f"<p>In Amsterdam meet de gemeente daarnaast de hoogte van {fmt_int(a_tel.n)} meetbouten in gevels. "
-                         f"Van {fmt_int(a_tel.met_recent)} daarvan is een recente snelheid bekend; doorsnee is dat "
-                         f"{_nl(a_tel.mediaan, 2)} mm per jaar.</p>")
+            delen.append(T("<h2>Meetbouten per buurt</h2>", "<h2>Settlement bolts per neighbourhood</h2>"))
+            delen.append(T(f"<p>In Amsterdam meet de gemeente daarnaast de hoogte van {fmt_int(a_tel.n)} meetbouten in gevels. "
+                           f"Van {fmt_int(a_tel.met_recent)} daarvan is een recente snelheid bekend; doorsnee is dat "
+                           f"{_nl(a_tel.mediaan, 2)} mm per jaar.</p>",
+                           f"<p>In Amsterdam the city also measures the height of {fmt_int(a_tel.n)} settlement bolts in façades. "
+                           f"For {fmt_int(a_tel.met_recent)} of them a recent rate is known; the median is "
+                           f"{_nl(a_tel.mediaan, 2)} mm per year.</p>"))
             delen.append(_verdeling(a_tel, args.rood, args.geel, True))
             if straten_a:
-                delen.append(f'<p><a class="knop" href="straat/">Zoek je straat: alle {fmt_int(len(straten_a))} straten met meetbouten</a></p>')
+                delen.append(f'<p><a class="knop" href="straat/">'
+                             + T(f'Zoek je straat: alle {fmt_int(len(straten_a))} straten met meetbouten',
+                                 f'Find your street: all {fmt_int(len(straten_a))} streets with settlement bolts') + '</a></p>')
             if wijken:
-                delen.append("<h2>Per wijk</h2>")
+                delen.append(T("<h2>Per wijk</h2>", "<h2>By district</h2>"))
                 wr = []
                 for wi in sorted(range(len(wijken)), key=lambda i: _sorteer(wijken[i]["naam"])):
                     wt = _samen(b_tel[bi] for bi in wijken[wi]["buurten"])
                     wr.append(f'<tr><td><a href="wijk/{wslugs[wi]}/">{_h(wijken[wi]["naam"])}</a></td>'
                               f'<td class="n">{len(wijken[wi]["buurten"])}</td><td class="n">{fmt_int(wt.n)}</td>'
                               f'<td class="n">{_nl(wt.mediaan, 2)}</td><td class="n">{wt.laatste or "–"}</td></tr>')
-                delen.append('<div class="tabel"><table><thead><tr><th>Wijk</th><th class="n">Buurten</th>'
-                             '<th class="n">Meetbouten</th><th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th>'
+                delen.append(f'<div class="tabel"><table><thead><tr><th>{T("Wijk", "District")}</th><th class="n">{T("Buurten", "Neighbourhoods")}</th>'
+                             f'<th class="n">{T("Meetbouten", "Settlement bolts")}</th><th class="n">{T("Doorsnee (mm/jaar)", "Median (mm/year)")}</th>'
+                             f'<th class="n">{T("Laatste meting", "Latest measurement")}</th>'
                              '</tr></thead><tbody>' + "".join(wr) + "</tbody></table></div>")
-                delen.append("<h2>Per buurt</h2>")
+                delen.append(T("<h2>Per buurt</h2>", "<h2>By neighbourhood</h2>"))
             rijen = []
             for bi in sorted((i for i in range(len(buurten)) if toon_buurt[i]),
                              key=lambda i: (_sorteer(buurten[i].get("wijk") or ""), _sorteer(buurten[i]["naam"]))):
@@ -1945,22 +2014,26 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                                 if buurt_wijk and buurt_wijk[bi] >= 0 else "<td></td>")
                              + f'<td class="n">{fmt_int(bt.n)}</td>'
                              f'<td class="n">{_nl(bt.mediaan, 2)}</td><td class="n">{bt.laatste or "–"}</td></tr>')
-            delen.append(FILTER_HTML.replace("__PH__", "Zoek een buurt of wijk"))
-            delen.append('<div class="tabel f"><table><thead><tr><th>Buurt</th><th>Wijk</th><th class="n">Meetbouten</th>'
-                         '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
+            delen.append(FILTER_HTML.replace("__PH__", T("Zoek een buurt of wijk", "Search a neighbourhood or district")))
+            delen.append(f'<div class="tabel f"><table><thead><tr><th>{T("Buurt", "Neighbourhood")}</th><th>{T("Wijk", "District")}</th>'
+                         f'<th class="n">{T("Meetbouten", "Settlement bolts")}</th>'
+                         f'<th class="n">{T("Doorsnee (mm/jaar)", "Median (mm/year)")}</th><th class="n">{T("Laatste meting", "Latest measurement")}</th></tr></thead><tbody>'
                          + "".join(rijen) + "</tbody></table></div>")
         andere = [i for i in per_prov.get(g.get("prov") or "", []) if i != gi]
         if g.get("prov") and andere:
-            delen.append(f"<h2>Andere gemeenten in {_h(g['prov'])}</h2><ul class=\"lijst\">" + "".join(
+            delen.append(T(f"<h2>Andere gemeenten in {_h(g['prov'])}</h2>", f"<h2>Other municipalities in {_h(g['prov'])}</h2>") + "<ul class=\"lijst\">" + "".join(
                 f'<li><a href="../{slugs[i]}/">{_h(gemeenten[i]["naam"])}</a></li>'
                 for i in sorted(andere, key=lambda i: _sorteer(gemeenten[i]["naam"]))) + "</ul>")
-        delen.append('<p><a href="../../gemeenten/">Alle gemeenten</a></p>')
-        besch = (f"Openbare NAP-metingen van Rijkswaterstaat in {naam}: {fmt_int(t.n)} peilmerken, waarvan "
-                 f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid"
-                 + (f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
+        delen.append(f'<p><a href="../../gemeenten/">{T("Alle gemeenten", "All municipalities")}</a></p>')
+        besch = (T(f"Openbare NAP-metingen van Rijkswaterstaat in {naam}: {fmt_int(t.n)} peilmerken, waarvan "
+                   f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid",
+                   f"Public NAP measurements by Rijkswaterstaat in {naam}: {fmt_int(t.n)} benchmarks, of which "
+                   f"{fmt_int(t.met_recent)} with a recent subsidence rate")
+                 + (T(f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)", f" (median {_nl(t.mediaan, 2)} mm per year)") if t.mediaan is not None else "") + ".")
         schrijf(f"gemeente/{slugs[gi]}", _pagina(
-            f"Zakking en bodemdaling in {naam} | Zakkingskaart", besch, f"{site_url}gemeente/{slugs[gi]}/", root,
-            root + root_css, [("Zakkingskaart", root), ("Gemeenten", "../../gemeenten/"), (naam, None)],
+            T(f"Zakking en bodemdaling in {naam} | Zakkingskaart", f"Subsidence in {naam}, the Netherlands | Zakkingskaart"),
+            besch, f"{site_url}gemeente/{slugs[gi]}/", root,
+            root + root_css, [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), "../../gemeenten/"), (naam, None)],
             "\n".join(delen), datum, og_url, bool(egms)))
 
     # --- pagina per Amsterdamse buurt ---
@@ -1974,20 +2047,26 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             bb = b["bbox"]
             lat, lon = (bb[1] + bb[3]) / 2, (bb[0] + bb[2]) / 2
             waar = f"{_h(b['naam'])}" + (f" ({_h(b['wijk'])})" if b.get("wijk") else "")
-            delen = [f"<h1>Zakking in {_h(b['naam'])}, Amsterdam</h1>",
-                     f'<p class="lead">Hoe snel zakken de gevels in de buurt {waar}? Deze pagina vat de openbare '
-                     f'meetbouten van de gemeente Amsterdam en de peilmerken van Rijkswaterstaat samen.</p>',
-                     _cijfers([(fmt_int(t.n), "meetbouten"),
-                               (fmt_int(t.met_recent), "met een recente snelheid"),
-                               (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""),
-                                "doorsnee snelheid"),
-                               (str(t.laatste or "–"), "laatste meting")]),
-                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 14, 16), "gemeente/" + aslug + "/" + bslugs[bi] + "/")}">Bekijk deze buurt op de kaart</a>',
-                     "<h2>Meetbouten</h2>"]
+            delen = [T(f"<h1>Zakking in {_h(b['naam'])}, Amsterdam</h1>", f"<h1>Subsidence in {_h(b['naam'])}, Amsterdam</h1>"),
+                     '<p class="lead">' + T(f'Hoe snel zakken de gevels in de buurt {waar}? Deze pagina vat de openbare '
+                                            f'meetbouten van de gemeente Amsterdam en de peilmerken van Rijkswaterstaat samen.',
+                                            f'How fast are the façades in the neighbourhood {waar} sinking? This page summarises the public '
+                                            f'settlement bolts of the City of Amsterdam and the benchmarks of Rijkswaterstaat.') + '</p>',
+                     _cijfers([(fmt_int(t.n), T("meetbouten", "settlement bolts")),
+                               (fmt_int(t.met_recent), T("met een recente snelheid", "with a recent rate")),
+                               (_nl(t.mediaan, 2) + (T(" mm/jaar", " mm/year") if t.mediaan is not None else ""),
+                                T("doorsnee snelheid", "median rate")),
+                               (str(t.laatste or "–"), T("laatste meting", "latest measurement"))]),
+                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 14, 16), "gemeente/" + aslug + "/" + bslugs[bi] + "/")}">'
+                     + T("Bekijk deze buurt op de kaart", "View this neighbourhood on the map") + '</a>',
+                     T("<h2>Meetbouten</h2>", "<h2>Settlement bolts</h2>")]
             if t.n:
-                delen.append(f"<p>In deze buurt meet de gemeente de hoogte van {fmt_int(t.n)} meetbouten in gevels. "
-                             f"Van {fmt_int(t.met_recent)} daarvan is een recente zakkingssnelheid bekend"
-                             + (f"; doorsnee is dat {_nl(t.mediaan, 2)} mm per jaar" if t.met_recent else "") + ".</p>")
+                delen.append(T(f"<p>In deze buurt meet de gemeente de hoogte van {fmt_int(t.n)} meetbouten in gevels. "
+                               f"Van {fmt_int(t.met_recent)} daarvan is een recente zakkingssnelheid bekend",
+                               f"<p>In this neighbourhood the city measures the height of {fmt_int(t.n)} settlement bolts in façades. "
+                               f"For {fmt_int(t.met_recent)} of them a recent subsidence rate is known")
+                             + (T(f"; doorsnee is dat {_nl(t.mediaan, 2)} mm per jaar", f"; the median is {_nl(t.mediaan, 2)} mm per year")
+                                if t.met_recent else "") + ".</p>")
                 delen.append(_verdeling(t, args.rood, args.geel, True))
                 straten = []
                 for sl, st in b_straat[bi].items():
@@ -1997,48 +2076,61 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                     si = straat_van_sleutel.get(sl, -1) if sl else -1
                     if si >= 0:
                         ankers += f'<a href="../straat/{straten_a[si]["slug"]}/">'
-                    straten.append((naam if sl else "Overige meetbouten (adres niet eenduidig)", st["t"], sl == "", ankers,
+                    straten.append((naam if sl else T("Overige meetbouten (adres niet eenduidig)", "Other settlement bolts (address unclear)"), st["t"], sl == "", ankers,
                                     "</a>" if si >= 0 else ""))
                 straten.sort(key=lambda x: (x[2], _sorteer(x[0])))
                 if straten:
-                    delen.append("<h2>Per straat</h2>")
-                    delen.append('<div class="tabel"><table><thead><tr><th>Straat</th><th class="n">Meetbouten</th>'
-                                 '<th class="n">Met recente snelheid</th><th class="n">Doorsnee (mm/jaar)</th>'
-                                 '<th class="n">Laatste meting</th></tr></thead><tbody>' + "".join(
+                    delen.append(T("<h2>Per straat</h2>", "<h2>By street</h2>"))
+                    delen.append(f'<div class="tabel"><table><thead><tr><th>{T("Straat", "Street")}</th><th class="n">{T("Meetbouten", "Settlement bolts")}</th>'
+                                 f'<th class="n">{T("Met recente snelheid", "With recent rate")}</th><th class="n">{T("Doorsnee (mm/jaar)", "Median (mm/year)")}</th>'
+                                 f'<th class="n">{T("Laatste meting", "Latest measurement")}</th></tr></thead><tbody>' + "".join(
                                      f'<tr><td>{ankers}{"<i>" + _h(s) + "</i>" if overig else _h(s)}{eind}</td><td class="n">{fmt_int(st.n)}</td>'
                                      f'<td class="n">{fmt_int(st.met_recent)}</td><td class="n">{_nl(st.mediaan, 2)}</td>'
                                      f'<td class="n">{st.laatste or "–"}</td></tr>' for s, st, overig, ankers, eind in straten)
                                  + "</tbody></table></div>")
             else:
-                delen.append("<p>In deze buurt staan geen meetbouten van de gemeente.</p>")
-            delen.append("<p class=\"uitleg\">Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte "
-                         "meet. De recente snelheid is berekend uit metingen die minstens 4 jaar uit elkaar liggen. "
-                         "Een meetbout zegt iets over die ene gevel; de kaart en deze pagina geven alleen de gemeten "
-                         "snelheden weer. <b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>")
-            delen.append("<h2>Peilmerken van Rijkswaterstaat</h2>" + napzin(tn, "deze buurt"))
+                delen.append(T("<p>In deze buurt staan geen meetbouten van de gemeente.</p>",
+                               "<p>There are no city settlement bolts in this neighbourhood.</p>"))
+            delen.append(T("<p class=\"uitleg\">Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte "
+                           "meet. De recente snelheid is berekend uit metingen die minstens 4 jaar uit elkaar liggen. "
+                           "Een meetbout zegt iets over die ene gevel; de kaart en deze pagina geven alleen de gemeten "
+                           "snelheden weer. <b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>",
+                           "<p class=\"uitleg\">Settlement bolts are measuring points in façades whose height the city measures "
+                           "periodically. The recent rate is calculated from measurements at least 4 years apart. "
+                           "A settlement bolt says something about that one façade; the map and this page only show the measured "
+                           "rates. The <b>median</b> is the middle value: half sink faster, half slower.</p>"))
+            delen.append(T("<h2>Peilmerken van Rijkswaterstaat</h2>", "<h2>Rijkswaterstaat benchmarks</h2>")
+                         + napzin(tn, T("deze buurt", "this neighbourhood")))
             if b_egms:
-                delen.append(egms_blok(b_egms[bi], "deze buurt"))
+                delen.append(egms_blok(b_egms[bi], T("deze buurt", "this neighbourhood")))
             wi = buurt_wijk[bi] if buurt_wijk else -1
-            delen.append("<p>" + (f'<a href="../wijk/{wslugs[wi]}/">Wijk {_h(wijken[wi]["naam"])}</a> · ' if wi >= 0 else "")
-                         + '<a href="../">Alle buurten in Amsterdam</a> · <a href="../straat/">Alle straten</a> · '
-                           '<a href="../../../gemeenten/">Alle gemeenten</a></p>')
-            besch = (f"Openbare meetbouten van de gemeente Amsterdam in {b['naam']}: {fmt_int(t.n)} meetbouten, waarvan "
-                     f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid"
-                     + (f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)" if t.mediaan is not None else "") + ".")
+            delen.append("<p>" + (f'<a href="../wijk/{wslugs[wi]}/">{T("Wijk", "District")} {_h(wijken[wi]["naam"])}</a> · ' if wi >= 0 else "")
+                         + f'<a href="../">{T("Alle buurten in Amsterdam", "All neighbourhoods in Amsterdam")}</a> · '
+                           f'<a href="../straat/">{T("Alle straten", "All streets")}</a> · '
+                           f'<a href="../../../gemeenten/">{T("Alle gemeenten", "All municipalities")}</a></p>')
+            besch = (T(f"Openbare meetbouten van de gemeente Amsterdam in {b['naam']}: {fmt_int(t.n)} meetbouten, waarvan "
+                       f"{fmt_int(t.met_recent)} met een recente zakkingssnelheid",
+                       f"Public settlement bolts of the City of Amsterdam in {b['naam']}: {fmt_int(t.n)} bolts, of which "
+                       f"{fmt_int(t.met_recent)} with a recent subsidence rate")
+                     + (T(f" (doorsnee {_nl(t.mediaan, 2)} mm per jaar)", f" (median {_nl(t.mediaan, 2)} mm per year)") if t.mediaan is not None else "") + ".")
             schrijf(f"gemeente/{aslug}/{bslugs[bi]}", _pagina(
-                f"Zakking in {b['naam']}, Amsterdam | Zakkingskaart", besch,
+                T(f"Zakking in {b['naam']}, Amsterdam | Zakkingskaart", f"Subsidence in {b['naam']}, Amsterdam | Zakkingskaart"), besch,
                 f"{site_url}gemeente/{aslug}/{bslugs[bi]}/", root, root + root_css,
-                [("Zakkingskaart", root), ("Gemeenten", "../../../gemeenten/"), ("Amsterdam", "../")]
-                + ([("Wijk " + wijken[buurt_wijk[bi]]["naam"], f"../wijk/{wslugs[buurt_wijk[bi]]}/")]
+                [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), "../../../gemeenten/"), ("Amsterdam", "../")]
+                + ([(T("Wijk ", "District ") + wijken[buurt_wijk[bi]]["naam"], f"../wijk/{wslugs[buurt_wijk[bi]]}/")]
                    if buurt_wijk and buurt_wijk[bi] >= 0 else []) + [(b["naam"], None)],
                 "\n".join(delen), datum, og_url, bool(egms)))
 
     if ams is not None and buurten:
         aslug = slugs[ams]
-        uitleg_bout = ("<p class=\"uitleg\">Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. "
-                       "De snelheid van de laatste jaren is berekend uit metingen die minstens 4 jaar uit elkaar liggen. Een "
-                       "meetbout zegt iets over die ene gevel; deze pagina geeft alleen de gemeten snelheden weer. "
-                       "<b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>")
+        uitleg_bout = T("<p class=\"uitleg\">Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. "
+                        "De snelheid van de laatste jaren is berekend uit metingen die minstens 4 jaar uit elkaar liggen. Een "
+                        "meetbout zegt iets over die ene gevel; deze pagina geeft alleen de gemeten snelheden weer. "
+                        "<b>Doorsnee</b> is de middelste waarde: de helft zakt sneller, de helft langzamer.</p>",
+                        "<p class=\"uitleg\">Settlement bolts are measuring points in façades whose height the city measures periodically. "
+                        "The rate for recent years is calculated from measurements at least 4 years apart. A "
+                        "settlement bolt says something about that one façade; this page only shows the measured rates. "
+                        "The <b>median</b> is the middle value: half sink faster, half slower.</p>")
 
         # --- pagina per wijk ---
         for wi, w in enumerate(wijken):
@@ -2050,15 +2142,19 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             bb = [min(x[0] for x in bbs), min(x[1] for x in bbs), max(x[2] for x in bbs), max(x[3] for x in bbs)]
             lat, lon = (bb[1] + bb[3]) / 2, (bb[0] + bb[2]) / 2
             rel = f"gemeente/{aslug}/wijk/{wslugs[wi]}"
-            delen = [f"<h1>Zakking in wijk {_h(w['naam'])}, Amsterdam</h1>",
-                     f'<p class="lead">Hoe snel zakken de gevels in de wijk {_h(w["naam"])}? Deze pagina vat de openbare '
-                     f'meetbouten van de gemeente Amsterdam en de peilmerken van Rijkswaterstaat samen, voor de '
-                     f'{len(bis)} buurten in deze wijk.</p>',
-                     _cijfers([(fmt_int(t.n), "meetbouten"), (fmt_int(t.met_recent), "met een recente snelheid"),
-                               (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
-                               (str(t.laatste or "–"), "laatste meting")]),
-                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 13, 16), rel + "/")}">Bekijk deze wijk op de kaart</a>',
-                     "<h2>Meetbouten</h2>"]
+            delen = [T(f"<h1>Zakking in wijk {_h(w['naam'])}, Amsterdam</h1>", f"<h1>Subsidence in district {_h(w['naam'])}, Amsterdam</h1>"),
+                     '<p class="lead">' + T(f'Hoe snel zakken de gevels in de wijk {_h(w["naam"])}? Deze pagina vat de openbare '
+                                            f'meetbouten van de gemeente Amsterdam en de peilmerken van Rijkswaterstaat samen, voor de '
+                                            f'{len(bis)} buurten in deze wijk.',
+                                            f'How fast are the façades in the district {_h(w["naam"])} sinking? This page summarises the public '
+                                            f'settlement bolts of the City of Amsterdam and the benchmarks of Rijkswaterstaat, for the '
+                                            f'{len(bis)} neighbourhoods in this district.') + '</p>',
+                     _cijfers([(fmt_int(t.n), T("meetbouten", "settlement bolts")), (fmt_int(t.met_recent), T("met een recente snelheid", "with a recent rate")),
+                               (_nl(t.mediaan, 2) + (T(" mm/jaar", " mm/year") if t.mediaan is not None else ""), T("doorsnee snelheid", "median rate")),
+                               (str(t.laatste or "–"), T("laatste meting", "latest measurement"))]),
+                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 13, 16), rel + "/")}">'
+                     + T("Bekijk deze wijk op de kaart", "View this district on the map") + '</a>',
+                     T("<h2>Meetbouten</h2>", "<h2>Settlement bolts</h2>")]
             if t.n:
                 delen.append(_verdeling(t, args.rood, args.geel, True))
             br = []
@@ -2068,26 +2164,31 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                       else _h(buurten[bi]["naam"]))
                 br.append(f'<tr><td>{nm}</td><td class="n">{fmt_int(bt.n)}</td><td class="n">{_nl(bt.mediaan, 2)}</td>'
                           f'<td class="n">{bt.laatste or "–"}</td></tr>')
-            delen.append("<h2>Per buurt</h2>" + '<div class="tabel"><table><thead><tr><th>Buurt</th><th class="n">Meetbouten</th>'
-                         '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
+            delen.append(T("<h2>Per buurt</h2>", "<h2>By neighbourhood</h2>")
+                         + f'<div class="tabel"><table><thead><tr><th>{T("Buurt", "Neighbourhood")}</th><th class="n">{T("Meetbouten", "Settlement bolts")}</th>'
+                         f'<th class="n">{T("Doorsnee (mm/jaar)", "Median (mm/year)")}</th><th class="n">{T("Laatste meting", "Latest measurement")}</th></tr></thead><tbody>'
                          + "".join(br) + "</tbody></table></div>")
             sis = sorted({bout_straat[ri] for ri in range(len(rows)) if bout_straat[ri] >= 0 and bout_buurt[ri] in set(bis)},
                          key=lambda i: _sorteer(straten_a[i]["naam"]))
             if sis:
-                delen.append("<h2>Straten in deze wijk</h2><ul class=\"lijst\">" + "".join(
+                delen.append(T("<h2>Straten in deze wijk</h2>", "<h2>Streets in this district</h2>") + "<ul class=\"lijst\">" + "".join(
                     f'<li><a href="../../straat/{straten_a[i]["slug"]}/">{_h(straten_a[i]["naam"])}</a></li>' for i in sis) + "</ul>")
             delen.append(uitleg_bout)
-            delen.append("<h2>Peilmerken van Rijkswaterstaat</h2>" + napzin(tn, "deze wijk"))
+            delen.append(T("<h2>Peilmerken van Rijkswaterstaat</h2>", "<h2>Rijkswaterstaat benchmarks</h2>")
+                         + napzin(tn, T("deze wijk", "this district")))
             if b_egms:
-                delen.append(egms_blok(_samen(b_egms[bi] for bi in bis), "deze wijk"))
-            delen.append('<p><a href="../../">Amsterdam</a> · <a href="../../straat/">Alle straten</a> · '
-                         '<a href="../../../../gemeenten/">Alle gemeenten</a></p>')
-            besch = (f"Openbare meetbouten van de gemeente Amsterdam in de wijk {w['naam']}: {fmt_int(t.n)} meetbouten in "
-                     f"{len(bis)} buurten" + (f", doorsnee {_nl(t.mediaan, 2)} mm per jaar" if t.mediaan is not None else "") + ".")
+                delen.append(egms_blok(_samen(b_egms[bi] for bi in bis), T("deze wijk", "this district")))
+            delen.append(f'<p><a href="../../">Amsterdam</a> · <a href="../../straat/">{T("Alle straten", "All streets")}</a> · '
+                         f'<a href="../../../../gemeenten/">{T("Alle gemeenten", "All municipalities")}</a></p>')
+            besch = (T(f"Openbare meetbouten van de gemeente Amsterdam in de wijk {w['naam']}: {fmt_int(t.n)} meetbouten in "
+                       f"{len(bis)} buurten", f"Public settlement bolts of the City of Amsterdam in the district {w['naam']}: "
+                       f"{fmt_int(t.n)} bolts in {len(bis)} neighbourhoods")
+                     + (T(f", doorsnee {_nl(t.mediaan, 2)} mm per jaar", f", median {_nl(t.mediaan, 2)} mm per year") if t.mediaan is not None else "") + ".")
             schrijf(rel, _pagina(
-                f"Zakking in wijk {w['naam']}, Amsterdam | Zakkingskaart", besch, f"{site_url}{rel}/", root, root + root_css,
-                [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../../"),
-                 ("Wijk " + w["naam"], None)], "\n".join(delen), datum, og_url, bool(egms)))
+                T(f"Zakking in wijk {w['naam']}, Amsterdam | Zakkingskaart", f"Subsidence in district {w['naam']}, Amsterdam | Zakkingskaart"),
+                besch, f"{site_url}{rel}/", root, root + root_css,
+                [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), root + "gemeenten/"), ("Amsterdam", "../../"),
+                 (T("Wijk ", "District ") + w["naam"], None)], "\n".join(delen), datum, og_url, bool(egms)))
 
         # --- pagina per straat ---
         for si, st in enumerate(straten_a):
@@ -2109,7 +2210,7 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             for bi, _n in sorted(bcount.items(), key=lambda kv: -kv[1]):
                 nm = (f'<a href="../../{bslugs[bi]}/">{_h(buurten[bi]["naam"])}</a>' if toon_buurt[bi] else _h(buurten[bi]["naam"]))
                 wi = buurt_wijk[bi]
-                bl.append(nm + (f' (wijk <a href="../../wijk/{wslugs[wi]}/">{_h(wijken[wi]["naam"])}</a>)' if wi >= 0 else ""))
+                bl.append(nm + (f' ({T("wijk", "district")} <a href="../../wijk/{wslugs[wi]}/">{_h(wijken[wi]["naam"])}</a>)' if wi >= 0 else ""))
             naam = st["naam"]
             van = f"&amp;van={rel}/"
             tr = []
@@ -2122,31 +2223,38 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                           f'<td><span class="chip{" stab" if k == "stab" else ""}" style="background:{GEBIED_KLEUR[k]}"></span>{KLASSE_LABEL[k]}</td>'
                           f'<td class="n">{rec}</td><td class="n">{_nl(r["total"], 2) if r["total"] is not None else "–"}</td>'
                           f'<td class="n">{_datum_nl(r["last"])}</td>'
-                          f'<td><a href="{root}?punt={_h(str(b["id"]))}{van}">kaart</a></td></tr>')
-            delen = [f"<h1>Zakking {_h(naam)}, Amsterdam</h1>",
-                     f'<p class="lead">De gemeente Amsterdam meet in de {_h(naam)} de hoogte van {fmt_int(t.n)} '
-                     f'meetbout{"en" if t.n != 1 else ""} in gevels. Hieronder staat per huisnummer hoe snel die de laatste jaren zakken.</p>',
-                     _cijfers([(fmt_int(t.n), "meetbouten"), (fmt_int(t.met_recent), "met een recente snelheid"),
-                               (_nl(t.mediaan, 2) + (" mm/jaar" if t.mediaan is not None else ""), "doorsnee snelheid"),
-                               (str(t.laatste or "–"), "laatste meting")]),
-                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 15, 18), rel + "/")}">Bekijk de {_h(naam)} op de kaart</a>']
+                          f'<td><a href="{root}?punt={_h(str(b["id"]))}{van}">{T("kaart", "map")}</a></td></tr>')
+            delen = [T(f"<h1>Zakking {_h(naam)}, Amsterdam</h1>", f"<h1>Subsidence {_h(naam)}, Amsterdam</h1>"),
+                     '<p class="lead">' + T(f'De gemeente Amsterdam meet in de {_h(naam)} de hoogte van {fmt_int(t.n)} '
+                                            f'meetbout{"en" if t.n != 1 else ""} in gevels. Hieronder staat per huisnummer hoe snel die de laatste jaren zakken.',
+                                            f'The City of Amsterdam measures the height of {fmt_int(t.n)} settlement '
+                                            f'bolt{"s" if t.n != 1 else ""} in façades on {_h(naam)}. Below, for each house number, is how fast they have been sinking in recent years.')
+                     + '</p>',
+                     _cijfers([(fmt_int(t.n), T("meetbouten", "settlement bolts")), (fmt_int(t.met_recent), T("met een recente snelheid", "with a recent rate")),
+                               (_nl(t.mediaan, 2) + (T(" mm/jaar", " mm/year") if t.mediaan is not None else ""), T("doorsnee snelheid", "median rate")),
+                               (str(t.laatste or "–"), T("laatste meting", "latest measurement"))]),
+                     f'<a class="knop" href="{_kaart_link(root, lat, lon, _zoom_voor(bb, 15, 18), rel + "/")}">'
+                     + T(f'Bekijk de {_h(naam)} op de kaart', f'View {_h(naam)} on the map') + '</a>']
             if bl:
-                delen.append("<p>Ligt in: " + "; ".join(bl) + ".</p>")
+                delen.append(T("<p>Ligt in: ", "<p>Located in: ") + "; ".join(bl) + ".</p>")
             if t.n >= 3:
                 delen.append(_verdeling(t, args.rood, args.geel, True))
-            delen.append("<h2>Per huisnummer</h2>" + '<div class="tabel"><table><thead><tr><th>Adres</th><th>Kleur op de kaart</th>'
-                         '<th class="n">Laatste jaren (mm/jaar)</th><th class="n">Sinds 1e meting (mm/jaar)</th>'
-                         '<th class="n">Laatste meting</th><th></th></tr></thead><tbody>' + "".join(tr) + "</tbody></table></div>")
+            delen.append(T("<h2>Per huisnummer</h2>", "<h2>By house number</h2>")
+                         + f'<div class="tabel"><table><thead><tr><th>{T("Adres", "Address")}</th><th>{T("Kleur op de kaart", "Colour on the map")}</th>'
+                         f'<th class="n">{T("Laatste jaren (mm/jaar)", "Recent years (mm/year)")}</th><th class="n">{T("Sinds 1e meting (mm/jaar)", "Since 1st measurement (mm/year)")}</th>'
+                         f'<th class="n">{T("Laatste meting", "Latest measurement")}</th><th></th></tr></thead><tbody>' + "".join(tr) + "</tbody></table></div>")
             delen.append(uitleg_bout)
-            delen.append('<p><a href="../">Alle straten in Amsterdam</a> · <a href="../../">Amsterdam</a> · '
-                         '<a href="../../../../gemeenten/">Alle gemeenten</a></p>')
-            besch = (f"Zakking in de {naam} (Amsterdam): {fmt_int(t.n)} meetbouten van de gemeente per huisnummer"
-                     + (f", doorsnee {_nl(t.mediaan, 2)} mm per jaar" if t.mediaan is not None else "")
-                     + (f", laatste meting {t.laatste}" if t.laatste else "") + ".")
+            delen.append(f'<p><a href="../">{T("Alle straten in Amsterdam", "All streets in Amsterdam")}</a> · <a href="../../">Amsterdam</a> · '
+                         f'<a href="../../../../gemeenten/">{T("Alle gemeenten", "All municipalities")}</a></p>')
+            besch = (T(f"Zakking in de {naam} (Amsterdam): {fmt_int(t.n)} meetbouten van de gemeente per huisnummer",
+                       f"Subsidence on {naam} (Amsterdam): {fmt_int(t.n)} city settlement bolts by house number")
+                     + (T(f", doorsnee {_nl(t.mediaan, 2)} mm per jaar", f", median {_nl(t.mediaan, 2)} mm per year") if t.mediaan is not None else "")
+                     + (T(f", laatste meting {t.laatste}", f", latest measurement {t.laatste}") if t.laatste else "") + ".")
             schrijf(rel, _pagina(
-                f"Zakking {naam}, Amsterdam: meetbouten per huisnummer | Zakkingskaart", besch, f"{site_url}{rel}/", root,
-                root + root_css, [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../../"),
-                                  ("Straten", "../"), (naam, None)], "\n".join(delen), datum, og_url, False))
+                T(f"Zakking {naam}, Amsterdam: meetbouten per huisnummer | Zakkingskaart",
+                  f"Subsidence {naam}, Amsterdam: settlement bolts by house number | Zakkingskaart"), besch, f"{site_url}{rel}/", root,
+                root + root_css, [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), root + "gemeenten/"), ("Amsterdam", "../../"),
+                                  (T("Straten", "Streets"), "../"), (naam, None)], "\n".join(delen), datum, og_url, False))
 
         # --- overzicht van alle straten ---
         if straten_a:
@@ -2155,10 +2263,12 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
             for si, st in enumerate(straten_a):
                 l0 = _sorteer(st["naam"])[:1].upper()
                 per_letter.setdefault(l0 if l0.isalpha() else "#", []).append(si)
-            delen = ["<h1>Zakking per straat in Amsterdam</h1>",
-                     f'<p class="lead">Alle {fmt_int(len(straten_a))} straten in Amsterdam met meetbouten van de gemeente. '
-                     'Klik op een straat voor de meetbouten per huisnummer.</p>',
-                     FILTER_HTML.replace("__PH__", "Zoek je straat")]
+            delen = [T("<h1>Zakking per straat in Amsterdam</h1>", "<h1>Subsidence by street in Amsterdam</h1>"),
+                     '<p class="lead">' + T(f'Alle {fmt_int(len(straten_a))} straten in Amsterdam met meetbouten van de gemeente. '
+                                            'Klik op een straat voor de meetbouten per huisnummer.',
+                                            f'All {fmt_int(len(straten_a))} streets in Amsterdam with city settlement bolts. '
+                                            'Click a street for the settlement bolts by house number.') + '</p>',
+                     FILTER_HTML.replace("__PH__", T("Zoek je straat", "Find your street"))]
             for l0 in sorted(per_letter):
                 delen.append(f"<h2>{_h(l0)}</h2>")
                 rr = []
@@ -2169,14 +2279,15 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
                         t.voeg(bout_k[ri] or "oud", rows[ri]["r"]["recent"], rows[ri]["r"]["lastY"])
                     rr.append(f'<tr><td><a href="{st["slug"]}/">{_h(st["naam"])}</a></td><td class="n">{fmt_int(t.n)}</td>'
                               f'<td class="n">{_nl(t.mediaan, 2)}</td><td class="n">{t.laatste or "–"}</td></tr>')
-                delen.append('<div class="tabel f"><table><thead><tr><th>Straat</th><th class="n">Meetbouten</th>'
-                             '<th class="n">Doorsnee (mm/jaar)</th><th class="n">Laatste meting</th></tr></thead><tbody>'
+                delen.append(f'<div class="tabel f"><table><thead><tr><th>{T("Straat", "Street")}</th><th class="n">{T("Meetbouten", "Settlement bolts")}</th>'
+                             f'<th class="n">{T("Doorsnee (mm/jaar)", "Median (mm/year)")}</th><th class="n">{T("Laatste meting", "Latest measurement")}</th></tr></thead><tbody>'
                              + "".join(rr) + "</tbody></table></div>")
             schrijf(f"gemeente/{aslug}/straat", _pagina(
-                "Zakking per straat in Amsterdam | Zakkingskaart",
-                f"Alle {len(straten_a)} straten in Amsterdam met meetbouten van de gemeente: zakking per huisnummer.",
+                T("Zakking per straat in Amsterdam | Zakkingskaart", "Subsidence by street in Amsterdam | Zakkingskaart"),
+                T(f"Alle {len(straten_a)} straten in Amsterdam met meetbouten van de gemeente: zakking per huisnummer.",
+                  f"All {len(straten_a)} streets in Amsterdam with city settlement bolts: subsidence by house number."),
                 f"{site_url}gemeente/{aslug}/straat/", root, root + root_css,
-                [("Zakkingskaart", root), ("Gemeenten", root + "gemeenten/"), ("Amsterdam", "../"), ("Straten", None)],
+                [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), root + "gemeenten/"), ("Amsterdam", "../"), (T("Straten", "Streets"), None)],
                 "\n".join(delen), datum, og_url, False))
 
     # --- hoe betrouwbaar is de satelliet? ---
@@ -2184,59 +2295,82 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
         root = "../"
         rij = [(i, st) for i, st in toets["per_gemeente"].items()]
         rij.sort(key=lambda x: _sorteer(gemeenten[x[0]]["naam"]))
-        delen = ["<h1>Hoe goed klopt de satelliet?</h1>",
-                 '<p class="lead">De kaart laat zien hoe satellieten de grond zien bewegen, in blokken van 100 bij 100 meter. '
-                 'Dat leggen we naast metingen die met de hand worden gedaan: de peilmerken van Rijkswaterstaat in heel Nederland en '
-                 'de meetbouten van de gemeente Amsterdam. Zo kunt u zelf zien hoe goed ze overeenkomen. We veranderen niets aan de '
-                 'gegevens; we leggen ze alleen naast elkaar.</p>',
-                 "<h2>Tegenover de peilmerken in Nederland</h2>", toets_zin(toets["peilmerken"], "peilmerken"), toets_uitleg(toets["peilmerken"])]
+        kop = T("Hoe goed klopt de satelliet?", "How accurate is the satellite?")
+        rel_per = _h(toets['release'].replace('-', '–'))
+        delen = [f"<h1>{kop}</h1>",
+                 '<p class="lead">' + T('De kaart laat zien hoe satellieten de grond zien bewegen, in blokken van 100 bij 100 meter. '
+                                        'Dat leggen we naast metingen die met de hand worden gedaan: de peilmerken van Rijkswaterstaat in heel Nederland en '
+                                        'de meetbouten van de gemeente Amsterdam. Zo kunt u zelf zien hoe goed ze overeenkomen. We veranderen niets aan de '
+                                        'gegevens; we leggen ze alleen naast elkaar.',
+                                        'The map shows how satellites see the ground move, in blocks of 100 by 100 metres. '
+                                        'We compare that with measurements taken by hand: the Rijkswaterstaat benchmarks across the Netherlands and '
+                                        'the settlement bolts of the City of Amsterdam. This lets you see for yourself how well they agree. We do not change the '
+                                        'data; we only put them side by side.') + '</p>',
+                 T("<h2>Tegenover de peilmerken in Nederland</h2>", "<h2>Compared with benchmarks in the Netherlands</h2>"),
+                 toets_zin(toets["peilmerken"], T("peilmerken", "benchmarks")), toets_uitleg(toets["peilmerken"])]
         if toets["meetbouten"].get("n", 0) >= 10:
-            delen += ["<h2>Tegenover de meetbouten in Amsterdam</h2>", toets_zin(toets["meetbouten"], "meetbouten"),
-                      "<p>Meetbouten zitten in de gevels van gewone huizen en de gemeente meet ze vaak.</p>"]
-        delen += ["<h2>Per gemeente</h2>", "<p>Gemeenten met minstens 10 peilmerken die recent zijn gemeten en een satellietblok in de buurt hebben.</p>",
-                  FILTER_HTML.replace("__PH__", "Zoek je gemeente"),
-                  '<div class="tabel f"><table><thead><tr><th>Gemeente</th><th class="n">Peilmerken</th><th class="n">Minder dan 1 mm verschil</th>'
-                  '<th class="n">Minder dan 2 mm verschil</th><th class="n">Doorsnee verschil (mm/jaar)</th></tr></thead><tbody>'
+            delen += [T("<h2>Tegenover de meetbouten in Amsterdam</h2>", "<h2>Compared with settlement bolts in Amsterdam</h2>"),
+                      toets_zin(toets["meetbouten"], T("meetbouten", "settlement bolts")),
+                      T("<p>Meetbouten zitten in de gevels van gewone huizen en de gemeente meet ze vaak.</p>",
+                        "<p>Settlement bolts are in the façades of ordinary houses and the city measures them often.</p>")]
+        delen += [T("<h2>Per gemeente</h2>", "<h2>By municipality</h2>"),
+                  T("<p>Gemeenten met minstens 10 peilmerken die recent zijn gemeten en een satellietblok in de buurt hebben.</p>",
+                    "<p>Municipalities with at least 10 recently measured benchmarks that have a satellite block nearby.</p>"),
+                  FILTER_HTML.replace("__PH__", T("Zoek je gemeente", "Find your municipality")),
+                  f'<div class="tabel f"><table><thead><tr><th>{T("Gemeente", "Municipality")}</th><th class="n">{T("Peilmerken", "Benchmarks")}</th>'
+                  f'<th class="n">{T("Minder dan 1 mm verschil", "Less than 1 mm difference")}</th>'
+                  f'<th class="n">{T("Minder dan 2 mm verschil", "Less than 2 mm difference")}</th>'
+                  f'<th class="n">{T("Doorsnee verschil (mm/jaar)", "Median difference (mm/year)")}</th></tr></thead><tbody>'
                   + "".join(f'<tr><td><a href="../gemeente/{slugs[i]}/">{_h(gemeenten[i]["naam"])}</a></td><td class="n">{fmt_int(st["n"])}</td>'
-                            f'<td class="n">{st["binnen_1"]} van de 100</td><td class="n">{st["binnen_2"]} van de 100</td>'
+                            f'<td class="n">{st["binnen_1"]} {T("van de 100", "out of 100")}</td><td class="n">{st["binnen_2"]} {T("van de 100", "out of 100")}</td>'
                             f'<td class="n">{"+" if st["verschuiving"] > 0 else ""}{_nl(st["verschuiving"], 1)}</td></tr>' for i, st in rij)
                   + "</tbody></table></div>",
-                  "<h2>Hoe is dit berekend?</h2>",
-                  f"<p>Meegeteld zijn peilmerken en meetbouten met een recente snelheid die minstens tot {_nl(toets['tot'], 1)} zijn gemeten, "
-                  f"want de satelliet meet over {_h(toets['release'].replace('-', '–'))}. Bij elk peilmerk of elke meetbout nemen we het "
-                  "dichtstbijzijnde satellietblok binnen 75 meter; blokken met een onzekere meting tellen niet mee. "
-                  "&lsquo;Doorsnee verschil&rsquo; is het middelste verschil: een plus betekent dat de satelliet meer zakking meet.</p>"]
+                  T("<h2>Hoe is dit berekend?</h2>", "<h2>How is this calculated?</h2>"),
+                  T(f"<p>Meegeteld zijn peilmerken en meetbouten met een recente snelheid die minstens tot {_nl(toets['tot'], 1)} zijn gemeten, "
+                    f"want de satelliet meet over {rel_per}. Bij elk peilmerk of elke meetbout nemen we het "
+                    "dichtstbijzijnde satellietblok binnen 75 meter; blokken met een onzekere meting tellen niet mee. "
+                    "&lsquo;Doorsnee verschil&rsquo; is het middelste verschil: een plus betekent dat de satelliet meer zakking meet.</p>",
+                    f"<p>Included are benchmarks and settlement bolts with a recent rate that were measured at least until {_nl(toets['tot'], 1)}, "
+                    f"because the satellite measures over {rel_per}. For each benchmark or bolt we take the "
+                    "nearest satellite block within 75 metres; blocks with an uncertain measurement are not counted. "
+                    "&lsquo;Median difference&rsquo; is the middle difference: a plus means the satellite measures more subsidence.</p>")]
         schrijf("betrouwbaarheid", _pagina(
-            "Hoe goed klopt de satelliet? | Zakkingskaart",
-            "De satellietmetingen van bodemdaling naast de peilmerken van Rijkswaterstaat en de meetbouten van Amsterdam: hoe goed komen ze overeen, "
-            "per gemeente.", f"{site_url}betrouwbaarheid/", root, root + root_css,
-            [("Zakkingskaart", root), ("Hoe goed klopt de satelliet?", None)], "\n".join(delen), datum, og_url, True))
+            f"{kop} | Zakkingskaart",
+            T("De satellietmetingen van bodemdaling naast de peilmerken van Rijkswaterstaat en de meetbouten van Amsterdam: hoe goed komen ze overeen, "
+              "per gemeente.", "Satellite measurements of subsidence compared with Rijkswaterstaat benchmarks and Amsterdam settlement bolts: "
+              "how well do they agree, by municipality."), f"{site_url}betrouwbaarheid/", root, root + root_css,
+            [("Zakkingskaart", root), (kop, None)], "\n".join(delen), datum, og_url, True))
 
     # --- overzicht van alle gemeenten ---
     root = "../"
     groepen = sorted(per_prov.items(), key=lambda kv: (kv[0] == "", kv[0].lower()))
-    delen = ["<h1>Zakking per gemeente</h1>",
-             '<p class="lead">Per gemeente een samenvatting van de openbare metingen van Rijkswaterstaat: hoeveel '
-             'peilmerken er zijn, van hoeveel bekend is hoe snel ze de laatste jaren zakken, en de doorsnee snelheid '
-             '(de middelste waarde: de helft zakt sneller, de helft langzamer). '
-             'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.'
-             + (' <a href="../betrouwbaarheid/">Hoe goed klopt de satelliet?</a>' if toets else "") + '</p>',
-             FILTER_HTML.replace("__PH__", "Zoek je gemeente")]
+    delen = [T("<h1>Zakking per gemeente</h1>", "<h1>Subsidence by municipality</h1>"),
+             '<p class="lead">' + T('Per gemeente een samenvatting van de openbare metingen van Rijkswaterstaat: hoeveel '
+                                    'peilmerken er zijn, van hoeveel bekend is hoe snel ze de laatste jaren zakken, en de doorsnee snelheid '
+                                    '(de middelste waarde: de helft zakt sneller, de helft langzamer). '
+                                    'Voor Amsterdam is er ook een overzicht per buurt, op basis van de meetbouten van de gemeente.',
+                                    'For each municipality a summary of the public measurements by Rijkswaterstaat: how many '
+                                    'benchmarks there are, for how many we know how fast they have been sinking in recent years, and the median rate '
+                                    '(the middle value: half sink faster, half slower). '
+                                    'For Amsterdam there is also an overview by neighbourhood, based on the city\'s settlement bolts.')
+             + (f' <a href="../betrouwbaarheid/">{T("Hoe goed klopt de satelliet?", "How accurate is the satellite?")}</a>' if toets else "") + '</p>',
+             FILTER_HTML.replace("__PH__", T("Zoek je gemeente", "Find your municipality"))]
     for prov, idxs in groepen:
         if prov:
             delen.append(f"<h2>{_h(prov)}</h2>")
-        delen.append('<div class="tabel f"><table><thead><tr><th>Gemeente</th><th class="n">Peilmerken</th>'
-                     '<th class="n">Met recente snelheid</th><th class="n">Doorsnee (mm/jaar)</th></tr></thead><tbody>'
+        delen.append(f'<div class="tabel f"><table><thead><tr><th>{T("Gemeente", "Municipality")}</th><th class="n">{T("Peilmerken", "Benchmarks")}</th>'
+                     f'<th class="n">{T("Met recente snelheid", "With recent rate")}</th><th class="n">{T("Doorsnee (mm/jaar)", "Median (mm/year)")}</th></tr></thead><tbody>'
                      + "".join(f'<tr><td><a href="../gemeente/{slugs[i]}/">{_h(gemeenten[i]["naam"])}</a></td>'
                                f'<td class="n">{fmt_int(g_tel[i].n)}</td><td class="n">{fmt_int(g_tel[i].met_recent)}</td>'
                                f'<td class="n">{_nl(g_tel[i].mediaan, 2)}</td></tr>'
                                for i in sorted(idxs, key=lambda i: _sorteer(gemeenten[i]["naam"])))
                      + "</tbody></table></div>")
     schrijf("gemeenten", _pagina(
-        "Zakking en bodemdaling per gemeente | Zakkingskaart",
-        "Per gemeente in Nederland een samenvatting van de openbare NAP-metingen van Rijkswaterstaat: aantal peilmerken "
-        "en de recente zakkingssnelheid.", f"{site_url}gemeenten/", root, root + root_css,
-        [("Zakkingskaart", root), ("Gemeenten", None)], "\n".join(delen), datum, og_url, bool(egms)))
+        T("Zakking en bodemdaling per gemeente | Zakkingskaart", "Subsidence by municipality in the Netherlands | Zakkingskaart"),
+        T("Per gemeente in Nederland een samenvatting van de openbare NAP-metingen van Rijkswaterstaat: aantal peilmerken "
+          "en de recente zakkingssnelheid.", "For each municipality in the Netherlands a summary of the public NAP measurements by "
+          "Rijkswaterstaat: number of benchmarks and the recent subsidence rate."), f"{site_url}gemeenten/", root, root + root_css,
+        [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), None)], "\n".join(delen), datum, og_url, bool(egms)))
     write_text(os.path.join(out_dir, root_css.split("?")[0]), GEBIED_CSS)
     log(f"         {len(paden)} pagina's geschreven")
     nav = {"g": [[slugs[i], g["naam"], str(g.get("code") or "")] for i, g in enumerate(gemeenten)],
@@ -2755,10 +2889,14 @@ def toets_blokken(egms, nap_rows, nap_gem, rows, now_y, args):
 def toets_uitleg(st):
     """Korte uitleg waarom satelliet en peilmerken verschillen; de vraag past zich aan aan de richting van het verschil."""
     if st and st.get("n", 0) >= 10 and st.get("verschuiving", 0) >= 0.2:
-        return ("<p><b>Waarom zakt de satelliet vaak sneller dan de peilmerken?</b> Peilmerken zitten in stevige gebouwen en bruggen. "
-                "De satelliet meet ook straten, grond en weilanden, en die zakken vaak meer. Ze meten bovendien over andere jaren.</p>")
-    return ("<p><b>Waarom verschillen satelliet en peilmerken?</b> Peilmerken zitten in stevige gebouwen en bruggen. De satelliet meet "
-            "ook straten, grond en weilanden. Ze meten bovendien over andere jaren en ten opzichte van een ander vast punt.</p>")
+        return T("<p><b>Waarom zakt de satelliet vaak sneller dan de peilmerken?</b> Peilmerken zitten in stevige gebouwen en bruggen. "
+                 "De satelliet meet ook straten, grond en weilanden, en die zakken vaak meer. Ze meten bovendien over andere jaren.</p>",
+                 "<p><b>Why does the satellite often show faster sinking than the benchmarks?</b> Benchmarks are in solid buildings and bridges. "
+                 "The satellite also measures streets, ground and meadows, which often sink more. They also measure over different years.</p>")
+    return T("<p><b>Waarom verschillen satelliet en peilmerken?</b> Peilmerken zitten in stevige gebouwen en bruggen. De satelliet meet "
+             "ook straten, grond en weilanden. Ze meten bovendien over andere jaren en ten opzichte van een ander vast punt.</p>",
+             "<p><b>Why do the satellite and the benchmarks differ?</b> Benchmarks are in solid buildings and bridges. The satellite also "
+             "measures streets, ground and meadows. They also measure over different years and relative to a different fixed point.</p>")
 
 
 def toets_zin(st, wat):
@@ -2766,6 +2904,11 @@ def toets_zin(st, wat):
     if not st or st.get("n", 0) < 10:
         return ""
     vs = st["verschuiving"]
+    if TAAL == "en":
+        return (f"<p>We compared the satellite blocks with {fmt_int(st['n'])} {wat}. For <b>{st['binnen_1']} out of 100</b> the difference is "
+                f"less than 1 mm per year, for {st['binnen_2']} out of 100 less than 2 mm per year. "
+                + (f"Typically the satellite measures {_nl(abs(vs), 1)} mm per year {'more' if vs > 0 else 'less'} subsidence." if abs(vs) >= 0.2
+                   else "Typically they measure about the same.") + "</p>")
     return (f"<p>We hebben de satellietblokken naast {fmt_int(st['n'])} {wat} gelegd. Bij <b>{st['binnen_1']} van de 100</b> scheelt het "
             f"minder dan 1 mm per jaar, bij {st['binnen_2']} van de 100 minder dan 2 mm per jaar. "
             + (f"Doorsnee meet de satelliet {_nl(abs(vs), 1)} mm per jaar {'meer' if vs > 0 else 'minder'} zakking." if abs(vs) >= 0.2
@@ -2791,6 +2934,470 @@ def egms_per_gebied(egms, gebieden, rood, geel):
 
 def short_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+
+
+# --------------------------------------------------------------------------
+# Engelse kaart: vertaaltabel voor HTML_TEMPLATE
+# Elke regel '@@ ' is een stuk Nederlandse tekst uit de kaart, de regel '== ' eronder de Engelse tekst.
+# Bij het bouwen moet elk stuk minstens één keer voorkomen; anders stopt de build met een duidelijke
+# melding, zodat een gewijzigde Nederlandse tekst niet ongemerkt onvertaald blijft.
+# Volgorde telt: langere stukken staan vóór kortere stukken die erin voorkomen.
+# --------------------------------------------------------------------------
+KAART_EN = r"""
+@@ <html lang="nl">
+== <html lang="en">
+@@ <title>Zakkingskaart: hoe snel zakken de gebouwen in jouw buurt?</title>
+== <title>Zakkingskaart: how fast are buildings sinking in your area? (the Netherlands)</title>
+@@ <meta name="description" content="Onafhankelijke kaart van zakkende gebouwen in Nederland, op basis van open data: de NAP-peilmerken van Rijkswaterstaat en, in Amsterdam, de meetbouten van de gemeente. Zoek je adres en zie hoe snel het de laatste jaren zakt.">
+== <meta name="description" content="Independent map of sinking buildings in the Netherlands, based on open data: the NAP benchmarks of Rijkswaterstaat and, in Amsterdam, the city's settlement bolts. Search your address and see how fast it has been sinking in recent years.">
+@@ aria-label="Kaart met meetbouten en NAP-peilmerken"
+== aria-label="Map with settlement bolts and NAP benchmarks"
+@@ placeholder="Zoek een adres, straat of plaats in Nederland" aria-label="Zoeken"
+== placeholder="Search an address, street or place in the Netherlands" aria-label="Search"
+@@ <button type="submit">Zoek</button>
+== <button type="submit">Search</button>
+@@ aria-label="Sluiten"
+== aria-label="Close"
+@@ aria-label="Meetpunten rond het gezochte adres"
+== aria-label="Measuring points around the searched address"
+@@ hidden>Kaartgegevens laden …</div>
+== hidden>Loading map data …</div>
+@@ <h2 id="fbTitle">Wat vind je van deze kaart?</h2><div class="sub">Je feedback helpt de kaart te verbeteren.</div>
+== <h2 id="fbTitle">What do you think of this map?</h2><div class="sub">Your feedback helps improve the map.</div>
+@@ <legend>Jouw beoordeling</legend>
+== <legend>Your rating</legend>
+@@ >Toelichting <span class="m">(optioneel)</span></label>
+== >Comment <span class="m">(optional)</span></label>
+@@ placeholder="Wat vind je goed, of wat kan beter?"
+== placeholder="What do you like, or what could be better?"
+@@ <label for="fbHp">Laat dit veld leeg</label>
+== <label for="fbHp">Leave this field empty</label>
+@@ <p class="mnote">We vragen geen naam of e-mailadres. Je beoordeling en toelichting komen als e-mail binnen bij de beheerder van deze kaart; zet er dus geen persoonlijke gegevens in. De kaart gebruikt geen cookies en geen tracking.</p>
+== <p class="mnote">We do not ask for a name or email address. Your rating and comment arrive as an email to the maintainer of this map, so please do not include personal details. The map uses no cookies and no tracking.</p>
+@@ id="fbSend" type="submit">Versturen</button>
+== id="fbSend" type="submit">Send</button>
+@@ <h2 id="iTitle">Voordat je de kaart opent</h2><div class="sub">Onafhankelijk hobbyproject, niet van de gemeente of Rijkswaterstaat</div>
+== <h2 id="iTitle">Before you open the map</h2><div class="sub">Independent hobby project, not by the municipality or Rijkswaterstaat</div>
+@@ <li>Deze kaart maakt openbare meetgegevens van de gemeente Amsterdam en Rijkswaterstaat makkelijker te bekijken, en rekent ze om naar hoe snel een meetpunt zakt. Meer niet: de kaart geeft <b>geen oordeel of advies</b> over gebouwen, de grond of de waarde ervan.</li>
+== <li>This map makes public measurement data from the City of Amsterdam and Rijkswaterstaat easier to view, and converts it into how fast a measuring point is sinking. Nothing more: the map gives <b>no judgement or advice</b> about buildings, the ground or their value.</li>
+@@ <li>Een meetpunt zit in één gevel of bouwwerk en zegt niet alles over de omgeving. Metingen kunnen oud, onvolledig of onjuist zijn.</li>
+== <li>A measuring point sits in one façade or structure and does not tell you everything about its surroundings. Measurements can be old, incomplete or wrong.</li>
+@@ <li>Vragen over de gegevens, of klopt er iets niet? Die gaan naar de bron: de gemeente Amsterdam of Rijkswaterstaat. Wat zij aanpassen, komt vanzelf op deze kaart.</li>
+== <li>Questions about the data, or is something wrong? Please contact the source: the City of Amsterdam or Rijkswaterstaat. Whatever they correct appears on this map automatically.</li>
+@@ <p class="iakk">Door verder te gaan, ga je ermee akkoord dat je deze kaart gebruikt zoals hij is, en dat je er <b>geen rechten aan kunt ontlenen</b>.</p>
+== <p class="iakk">By continuing, you agree that you use this map as it is, and that <b>no rights can be derived from it</b>.</p>
+@@ <a href="#over" id="iMore">Over &amp; disclaimer</a>
+== <a href="#over" id="iMore">About &amp; disclaimer</a>
+@@ <button id="iOk" type="button">Akkoord, naar de kaart</button>
+== <button id="iOk" type="button">I agree, go to the map</button>
+@@ <h2 id="aTitle">Over deze kaart</h2>
+== <h2 id="aTitle">About this map</h2>
+@@ <h3>Onafhankelijk initiatief</h3>
+== <h3>Independent initiative</h3>
+@@ <p>Zakkingskaart is een onafhankelijk, niet-commercieel initiatief. Het is geen website van een gemeente of van Rijkswaterstaat en wordt niet door hen gemaakt, gecontroleerd of goedgekeurd.</p>
+== <p>Zakkingskaart (Dutch for &ldquo;subsidence map&rdquo;) is an independent, non-commercial initiative. It is not a website of a municipality or of Rijkswaterstaat and is not made, checked or approved by them. This English version is a translation; in case of differences, the Dutch text prevails.</p>
+@@ <h3>Wat de kaart laat zien</h3>
+== <h3>What the map shows</h3>
+@@ <p>De kaart laat zien hoe snel gebouwen en de grond in Nederland zakken. Ze gebruikt drie openbare bronnen: de peilmerken van Rijkswaterstaat (heel Nederland), de meetbouten van de gemeente Amsterdam (veel meer meetpunten, alleen in Amsterdam) en satellietmetingen van de Europese Unie (heel Nederland).</p>
+== <p>The map shows how fast buildings and the ground in the Netherlands are sinking. It uses three public sources: the benchmarks of Rijkswaterstaat, the Dutch national public works agency (whole country), the settlement bolts of the City of Amsterdam (many more measuring points, Amsterdam only) and satellite measurements of the European Union (whole country).</p>
+@@ <h3>Begrippen</h3>
+== <h3>Terms</h3>
+@@ <li><b>mm per jaar:</b> hoeveel millimeter een punt per jaar lager komt te liggen. 1 mm per jaar is 1 centimeter in 10 jaar.</li>
+== <li><b>mm per year:</b> how many millimetres a point moves down each year. 1 mm per year is 1 centimetre in 10 years.</li>
+@@ <li><b>Meetbout:</b> een boutje in de gevel van een gebouw. De gemeente Amsterdam meet regelmatig hoe hoog het zit.</li>
+== <li><b>Settlement bolt (meetbout):</b> a small bolt in the façade of a building. The City of Amsterdam regularly measures its height.</li>
+@@ <li><b>Peilmerk:</b> een metalen boutje in een gebouw of brug, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De hoogte wordt gemeten ten opzichte van het NAP (Normaal Amsterdams Peil), de standaardhoogte van Nederland.</li>
+== <li><b>Benchmark (peilmerk):</b> a small metal bolt in a building or bridge whose height Rijkswaterstaat measures once every 5 to 15 years. The height is measured relative to NAP (Normaal Amsterdams Peil, Amsterdam Ordnance Datum), the standard height reference of the Netherlands.</li>
+@@ <li><b>Satellietmeting:</b> satellieten meten met radar de hoogte van grond, straten en gebouwen samen, per blok van 100 bij 100 meter.</li>
+== <li><b>Satellite measurement:</b> satellites use radar to measure the height of ground, streets and buildings together, per block of 100 by 100 metres.</li>
+@@ <li><b>Doorsnee (of doorgaans):</b> de middelste waarde van een groep meetpunten: de helft zakt sneller, de helft langzamer. Zo bepaalt één uitschieter niet het beeld.</li>
+== <li><b>Median (or typically):</b> the middle value of a group of measuring points: half sink faster, half slower. That way a single outlier does not determine the picture.</li>
+@@ <li><b>Bouwjaar en adressen:</b> uit de BAG, het landelijke register van gebouwen en adressen. Bij heel oude panden is het bouwjaar soms een schatting. Het aantal adressen laat zien of een pand bijvoorbeeld een appartementengebouw is.</li>
+== <li><b>Year of construction and addresses:</b> from the BAG, the national register of buildings and addresses. For very old buildings the year of construction is sometimes an estimate. The number of addresses shows, for example, whether a building is an apartment block.</li>
+@@ <li><b>Laatste jaren:</b> de snelheid berekend uit de laatste meting en een meting van minstens 4 jaar eerder (bij peilmerken minstens 8 jaar).</li>
+== <li><b>Recent years:</b> the rate calculated from the latest measurement and a measurement at least 4 years earlier (at least 8 years for benchmarks).</li>
+@@ <h3>Amsterdam: meetbouten</h3>
+== <h3>Amsterdam: settlement bolts</h3>
+@@ <p>In Amsterdam gebruikt de kaart de openbare meetboutgegevens van de gemeente en wordt ze wekelijks automatisch bijgewerkt. Meetbouten zijn meetpunten in gevels waarvan de gemeente periodiek de hoogte meet. Per meetbout laat de kaart zien hoe snel die de laatste jaren is gezakt (de recente snelheid), of het zakken duidelijk is afgenomen (&ldquo;gestabiliseerd&rdquo;) en of er recente metingen zijn. De kaart van de gemeente kleurt op de gemiddelde snelheid sinds de eerste meting; daardoor kunnen de kleuren verschillen.</p>
+== <p>In Amsterdam the map uses the city's public settlement bolt data and is updated automatically every week. Settlement bolts are measuring points in façades whose height the city measures periodically. For each bolt the map shows how fast it has sunk in recent years (the recent rate), whether the sinking has clearly slowed down (&ldquo;stabilised&rdquo;) and whether there are recent measurements. The city's own map colours by the average rate since the first measurement, so the colours can differ.</p>
+@@ <h3>Heel Nederland: peilmerken van Rijkswaterstaat</h3>
+== <h3>Whole country: Rijkswaterstaat benchmarks</h3>
+@@ <p>Een peilmerk (officieel: NAP-peilmerk) is een metalen boutje in een huis, brug of ander bouwwerk, waarvan Rijkswaterstaat eens per 5 tot 15 jaar de hoogte meet. De kaart toont per peilmerk hoe snel het de laatste jaren is gezakt, met dezelfde kleuren als de meetbouten, maar als open rondje. Uitgezoomd zie je vakjes met de doorsnee van de peilmerken erin. Er zijn veel minder peilmerken dan meetbouten: meestal een paar per buurt. Een peilmerk zakt mee met de grond van de hele omgeving; het zegt dus iets over de plek, niet per se over dat ene gebouw. Peilmerken die meer dan 20 jaar niet zijn gemeten, of waarvan de metingen een onverklaarbare sprong maken, zijn grijs.</p>
+== <p>A benchmark (officially: NAP benchmark, peilmerk) is a small metal bolt in a house, bridge or other structure whose height Rijkswaterstaat measures once every 5 to 15 years. The map shows for each benchmark how fast it has sunk in recent years, with the same colours as the settlement bolts, but as an open circle. Zoomed out you see squares with the median of the benchmarks inside them. There are far fewer benchmarks than settlement bolts: usually a few per neighbourhood. A benchmark moves with the ground of the whole area; it says something about the place, not necessarily about that one building. Benchmarks that have not been measured for more than 20 years, or whose measurements show an unexplained jump, are grey.</p>
+@@ <h3>Heel Nederland: bodemdaling gemeten vanuit de ruimte</h3>
+== <h3>Whole country: subsidence measured from space</h3>
+@@ <p>De laag &ldquo;Bodemdaling gemeten vanuit de ruimte&rdquo; komt van Copernicus, het aardobservatieprogramma van de Europese Unie (de dienst heet European Ground Motion Service, EGMS). Satellieten meten met radar elke paar dagen de hoogte van grond, straten en gebouwen. Daaruit is per blok van 100 bij 100 meter berekend hoeveel de grond per jaar zakte of steeg, over een periode van vijf jaar. Uitgezoomd zie je de doorsnee per blok van ongeveer 5 of 1 kilometer. Je ziet alleen blokken waar iets het radarsignaal goed terugkaatst, zoals daken, wegen en bruggen; in weilanden, akkers en op water is niets gemeten. Anders dan een meetbout of peilmerk meet een blok niet één gebouw, maar alles samen: een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Blokken met een onzekere meting zijn grijs. De laag staat standaard uit.</p>
+== <p>The layer &ldquo;Subsidence measured from space&rdquo; comes from Copernicus, the Earth observation programme of the European Union (the service is called the European Ground Motion Service, EGMS). Every few days, satellites use radar to measure the height of ground, streets and buildings. From this, for each block of 100 by 100 metres, it has been calculated how much the ground sank or rose per year over a period of five years. Zoomed out you see the median per block of about 5 or 1 kilometres. You only see blocks where something reflects the radar signal well, such as roofs, roads and bridges; nothing is measured in meadows, fields or on water. Unlike a settlement bolt or benchmark, a block does not measure one building but everything together: a house on piles can stand still while the street in front of it sinks, and vice versa. Blocks with an uncertain measurement are grey. The layer is off by default.</p>
+@@ <h3>Wat de kleuren betekenen</h3>
+== <h3>What the colours mean</h3>
+@@ <p>De kleur hangt alleen af van hoe snel een meetpunt de laatste jaren is gezakt: groen bij minder dan 1 mm per jaar, geel bij 1 tot 2 mm per jaar, rood bij 2 mm per jaar of meer. Gestabiliseerd: eerst minstens 1,5 en nu minder dan 0,5 mm per jaar. Grijs: geen recente of te weinig metingen. De grenzen van 1 en 2 mm per jaar zijn ook klassegrenzen op de meetboutenkaart van de gemeente Amsterdam, die eveneens van groen via geel naar rood kleurt. De kleuren beschrijven alleen de gemeten snelheid; ze zeggen niet of iets goed of slecht is. Onder &ldquo;Grenzen aanpassen&rdquo; kun je zelf andere grenzen kiezen.</p>
+== <p>The colour depends only on how fast a measuring point has sunk in recent years: green for less than 1 mm per year, yellow for 1 to 2 mm per year, red for 2 mm per year or more. Stabilised: first at least 1.5 and now less than 0.5 mm per year. Grey: no recent or too few measurements. The limits of 1 and 2 mm per year are also class limits on the City of Amsterdam's settlement bolt map, which likewise runs from green via yellow to red. The colours only describe the measured rate; they do not say whether something is good or bad. Under &ldquo;Adjust limits&rdquo; you can choose other limits yourself.</p>
+@@ <p>Deze kaart geeft openbare meetgegevens van de gemeente Amsterdam en Rijkswaterstaat eenvoudiger weer en rekent ze om naar een snelheid. Daarbij kan ze afwijken van de weergave van de bron. De kaart geeft geen oordeel of advies over gebouwen, de grond of de waarde ervan, en kan onvolledig of verouderd zijn. De kaart wordt met zorg gemaakt, maar zonder garantie. Wie de kaart gebruikt, doet dat op eigen verantwoordelijkheid; aan de kaart kunnen geen rechten worden ontleend en de beheerder is niet aansprakelijk voor gevolgen van het gebruik, voor zover de wet dat toestaat.</p>
+== <p>This map shows public measurement data from the City of Amsterdam and Rijkswaterstaat in a simpler way and converts it into a rate. In doing so it may differ from how the source presents the data. The map gives no judgement or advice about buildings, the ground or their value, and may be incomplete or out of date. The map is made with care, but without any guarantee. Anyone who uses the map does so at their own risk; no rights can be derived from the map and the maintainer is not liable for any consequences of its use, to the extent permitted by law. This English version is a translation; in case of differences, the Dutch text prevails.</p>
+@@ <h3>Vragen over de gegevens</h3>
+== <h3>Questions about the data</h3>
+@@ <p>Deze site beheert de meetgegevens niet en kan ze niet aanpassen. Heb je een vraag over een meting, of denk je dat er iets niet klopt? Neem dan contact op met de bron:</p>
+== <p>This site does not manage the measurement data and cannot change it. Do you have a question about a measurement, or do you think something is wrong? Please contact the source:</p>
+@@ <li><b>Meetbouten (Amsterdam):</b> gemeente Amsterdam, Basisinformatie,
+== <li><b>Settlement bolts (Amsterdam):</b> City of Amsterdam, Basisinformatie,
+@@ (contactadres bij de dataset <a
+== (contact address for the dataset <a
+@@ <li><b>Peilmerken:</b> Rijkswaterstaat, <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">contactformulier Servicedesk Data</a>.</li>
+== <li><b>Benchmarks:</b> Rijkswaterstaat, <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">Servicedesk Data contact form</a> (in Dutch).</li>
+@@ <p>Wat de bron aanpast of verwijdert, verdwijnt bij de volgende automatische update ook van deze kaart. De knop &ldquo;Feedback&rdquo; is voor opmerkingen over de website zelf.</p>
+== <p>Whatever the source corrects or removes also disappears from this map at the next automatic update. The &ldquo;Feedback&rdquo; button is for comments about the website itself.</p>
+@@ <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, het bouwjaar van het pand op een aangeklikte plek wordt opgevraagd bij de BAG-dienst van PDOK, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd. De adressen bij de meetpunten komen uit de openbare gegevens van de gemeente en Rijkswaterstaat; vragen daarover gaan naar de bron (zie &ldquo;Vragen over de gegevens&rdquo;).</p>
+== <p>This site uses no cookies and does not track visitors. We only count anonymously how often the map is opened per day, from a phone or a computer, via which kind of source (for example a search engine or another website) and how often people search and click. No IP addresses or other characteristics of you are stored. Your map settings are only kept in your own browser. The site is hosted by GitHub, the background map comes from PDOK, an address you search for outside the map data is looked up at the government's PDOK Locatieserver, the year of construction of the building at a clicked spot is requested from PDOK's BAG service, and &ldquo;View all measurement data&rdquo; fetches data from the City of Amsterdam or from Rijkswaterstaat; as with any website, those parties see your IP address. Feedback arrives as an email to the maintainer; no name or email address is asked for. The addresses at the measuring points come from the public data of the city and Rijkswaterstaat; questions about them go to the source (see &ldquo;Questions about the data&rdquo;).</p>
+@@ <h3>Bronnen</h3>
+== <h3>Sources</h3>
+@@ <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. Bouwjaar en adressen per pand: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (publiek domein). NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode:
+== <p>Settlement bolts: City of Amsterdam (api.data.amsterdam.nl). Background map: PDOK / Kadaster (CC BY 4.0). Address search: PDOK Locatieserver. Year of construction and addresses per building: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (public domain). NAP benchmarks: Rijkswaterstaat (CC0). Ground motion: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); contains modified Copernicus Sentinel data. Municipal boundaries (for the pages per municipality): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); neighbourhood boundaries Amsterdam: City of Amsterdam (CC0). Map library: Leaflet (BSD-2). Source code and method:
+@@ title="In- of uitklappen"
+== title="Expand or collapse"
+@@ <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>
+== <p class="indep">Independent initiative, separate from the municipality and Rijkswaterstaat · <a href="#over" id="aboutLink">About &amp; disclaimer</a>
+@@ <p class="note" id="viewnote">De getallen tellen de meetbouten die je nu op de kaart ziet.</p>
+== <p class="note" id="viewnote">The numbers count the settlement bolts you can currently see on the map.</p>
+@@ <p class="note"><b>Amsterdam:</b> een stip is één meetbout in een gevel; een lijn is een stuk straat (de doorsnee van de meetbouten daar).</p>
+== <p class="note"><b>Amsterdam:</b> a dot is one settlement bolt in a façade; a line is a stretch of street (the median of the bolts there).</p>
+@@ <p class="note"><b>Heel Nederland:</b> open rondjes zijn peilmerken van Rijkswaterstaat. Klik op iets voor details.</p>
+== <p class="note"><b>Whole country:</b> open circles are Rijkswaterstaat benchmarks. Click anything for details.</p>
+@@ <p class="note"><b>In de buurt:</b> zoek een adres, of klik met rechts (op een telefoon: lang indrukken) ergens op de kaart.</p>
+== <p class="note"><b>Nearby:</b> search an address, or right-click (on a phone: long-press) anywhere on the map.</p>
+@@ <span class="lbl">Meetbouten (Amsterdam)<small>Meetpunten van de gemeente in gevels van gebouwen</small></span>
+== <span class="lbl">Settlement bolts (Amsterdam)<small>City measuring points in building façades</small></span>
+@@ <span class="lbl">Peilmerken (heel Nederland)<small>Meetpunten van Rijkswaterstaat in gebouwen en bruggen · eens per 5 tot 15 jaar gemeten</small></span>
+== <span class="lbl">Benchmarks (whole country)<small>Rijkswaterstaat measuring points in buildings and bridges · measured once every 5 to 15 years</small></span>
+@@ <span class="lbl">Bodemdaling gemeten vanuit de ruimte<small>Satellietmetingen van de EU · per blok van 100 × 100 m · grond, straten en gebouwen samen</small></span>
+== <span class="lbl">Subsidence measured from space<small>EU satellite measurements · per block of 100 × 100 m · ground, streets and buildings together</small></span>
+@@ <summary>Grenzen aanpassen</summary>
+== <summary>Adjust limits</summary>
+@@ <label for="sRed">Zakt snel vanaf (mm/jaar)</label>
+== <label for="sRed">Sinking fast from (mm/year)</label>
+@@ <label for="sYellow">Zakt matig vanaf (mm/jaar)</label>
+== <label for="sYellow">Sinking moderately from (mm/year)</label>
+@@ <label for="sStabE">Gestabiliseerd: eerder minstens (mm/jaar)</label>
+== <label for="sStabE">Stabilised: earlier at least (mm/year)</label>
+@@ <label for="sStabN">... en nu minder dan (mm/jaar)</label>
+== <label for="sStabN">... and now less than (mm/year)</label>
+@@ <label for="sStale">Laatste meting hooguit (jaar oud)</label>
+== <label for="sStale">Latest measurement at most (years old)</label>
+@@ <input id="cStale" type="checkbox"> Oudere metingen tóch kleuren</label>
+== <input id="cStale" type="checkbox"> Colour older measurements anyway</label>
+@@ <input id="cDots" type="checkbox"> Losse meetbouten tonen</label>
+== <input id="cDots" type="checkbox"> Show individual settlement bolts</label>
+@@ id="reset" type="button">Standaard herstellen</button>
+== id="reset" type="button">Restore defaults</button>
+@@ d.textContent="Er ging iets mis bij het tekenen van de meetbouten. Stuur deze melding door:\n\n";
+== d.textContent="Something went wrong while drawing the map. Please pass on this message:\n\n";
+@@ (e.message||"fout")+" (regel "
+== (e.message||"error")+" (line "
+@@ >De kaartbibliotheek kon niet worden geladen. Controleer je internetverbinding en open het bestand opnieuw.</p>
+== >The map library could not be loaded. Check your internet connection and open the page again.</p>
+@@ "Deze browser telt niet meer mee in de bezoekersstatistieken.":"Deze browser telt weer mee in de bezoekersstatistieken."
+== "This browser is no longer counted in the visitor statistics.":"This browser is counted in the visitor statistics again."
+@@ if(c==="rood")return["Zakt snel","vanaf "+nf(S.red,1)+" mm/jaar"];
+== if(c==="rood")return["Sinking fast","from "+nf(S.red,1)+" mm/year"];
+@@ if(c==="geel")return["Zakt matig",nf(S.yellow,1)+" tot "+nf(S.red,1)+" mm/jaar"];
+== if(c==="geel")return["Sinking moderately",nf(S.yellow,1)+" to "+nf(S.red,1)+" mm/year"];
+@@ if(c==="groen")return["Zakt nauwelijks","minder dan "+nf(S.yellow,1)+" mm/jaar"];
+== if(c==="groen")return["Hardly sinking","less than "+nf(S.yellow,1)+" mm/year"];
+@@ if(c==="stab")return["Gestabiliseerd","zakte eerst flink, nu bijna niet meer"];
+== if(c==="stab")return["Stabilised","sank a lot at first, now hardly at all"];
+@@ return["Geen recente metingen","laatste meting ouder dan "+S.staleYears+" jaar, te weinig metingen of meetpunt vervallen"];
+== return["No recent measurements","latest measurement older than "+S.staleYears+" years, too few measurements or point discontinued"];
+@@ attribution:"Achtergrond: <a
+== attribution:"Background: <a
+@@ attribution:"Luchtfoto: PDOK / Beeldmateriaal Nederland"
+== attribution:"Aerial photo: PDOK / Beeldmateriaal Nederland"
+@@ {"Grijs (PDOK)":bases.pdokgrijs,"Pastel (PDOK)":bases.pdokpastel,"Standaard (PDOK)":bases.pdokstandaard,"Luchtfoto (PDOK)":bases.luchtfoto,"Geen achtergrond":bases.geen}
+== {"Grey (PDOK)":bases.pdokgrijs,"Pastel (PDOK)":bases.pdokpastel,"Standard (PDOK)":bases.pdokstandaard,"Aerial photo (PDOK)":bases.luchtfoto,"No background":bases.geen}
+@@ el.textContent="De achtergrondkaart laadt niet. Kies linksonder een andere achtergrond; de meetbouten werken ook zonder.";
+== el.textContent="The background map is not loading. Choose another background at the bottom left; the measuring points also work without one.";
+@@ addAttribution("Meetbouten: Gemeente Amsterdam"+(M.napUrl?" · Peilmerken: Rijkswaterstaat":"")+(M.egmsUrl?" · Satelliet: Copernicus (EU)":"")+" · Geen oordeel of advies");
+== addAttribution("Settlement bolts: City of Amsterdam"+(M.napUrl?" · Benchmarks: Rijkswaterstaat":"")+(M.egmsUrl?" · Satellite: Copernicus (EU)":"")+" · No judgement or advice");
+@@ document.getElementById("src").innerHTML="Gegevens van "+(M.napUrl?"Rijkswaterstaat (peilmerken), ":"")+"de gemeente Amsterdam (meetbouten, bijgewerkt "+fmtDate(M.generated)+")"+
+== document.getElementById("src").innerHTML="Data from "+(M.napUrl?"Rijkswaterstaat (benchmarks), ":"")+"the City of Amsterdam (settlement bolts, updated "+fmtDate(M.generated)+")"+
+@@ (M.egmsUrl?" en Copernicus, het aardobservatieprogramma van de EU (satelliet, gemeten "+
+== (M.egmsUrl?" and Copernicus, the EU's Earth observation programme (satellite, measured "+
+@@ M.count.toLocaleString("nl-NL")+" meetbouten, waarvan "+M.withSeries.toLocaleString("nl-NL")+" met metingen over minstens "+nf(M.minSpan,0)+" jaar. "+
+== M.count.toLocaleString("nl-NL")+" settlement bolts, of which "+M.withSeries.toLocaleString("nl-NL")+" with measurements over at least "+nf(M.minSpan,0)+" years. "+
+@@ "Hoe snel een punt zakt, is berekend uit de laatste meting en een meting van minstens "+nf(M.minSpan,0)+" jaar eerder. "+
+== "How fast a point is sinking is calculated from the latest measurement and a measurement at least "+nf(M.minSpan,0)+" years earlier. "+
+@@ "Weergave van openbare meetgegevens, zonder oordeel of advies."+(M.proef?" <b>Proefrun: onvolledige data.</b>":"");
+== "A presentation of public measurement data, without judgement or advice."+(M.proef?" <b>Test run: incomplete data.</b>":"");
+@@ aria-label="Cumulatieve zakking">
+== aria-label="Cumulative subsidence">
+@@ fill="#6b6a64">zakking ↓</text>
+== fill="#6b6a64">subsidence ↓</text>
+@@ esc(b[I.addr]||"Adres onbekend")
+== esc(b[I.addr]||"Address unknown")
+@@ '<div class="sub">Meetbout '+esc(b[I.id])+' van de gemeente'
+== '<div class="sub">Settlement bolt '+esc(b[I.id])+' (City of Amsterdam)'
+@@ (age!=null?" ("+age+" jaar geleden)":"")
+== (age!=null?" ("+age+(age===1?" year ago)":" years ago)"):"")
+@@ "te weinig metingen"
+== "too few measurements"
+@@ " · laatste "+fmtDate(
+== " · latest "+fmtDate(
+@@ <tr><th>Laatste jaren</th>
+== <tr><th>Recent years</th>
+@@ <tr><th>Daarvoor</th>
+== <tr><th>Before that</th>
+@@ <tr><th>Sinds 1e meting</th>
+== <tr><th>Since 1st measurement</th>
+@@ <tr><th>Totaal gezakt</th>
+== <tr><th>Total subsidence</th>
+@@ <tr><th>Metingen</th>
+== <tr><th>Measurements</th>
+@@ <p class="mnote">Grafiek wordt geladen …</p>
+== <p class="mnote">Loading chart …</p>
+@@ <p class="mnote">Grafiek kon niet worden geladen.</p>
+== <p class="mnote">The chart could not be loaded.</p>
+@@ ">Alle meetgegevens bekijken</a>
+== ">View all measurement data</a>
+@@ data-link>Link naar dit punt</a>
+== data-link>Link to this point</a>
+@@ <p class="disc">Openbare meetgegevens, zonder oordeel of advies. <a href="#over">Meer</a></p>
+== <p class="disc">Public measurement data, without judgement or advice. <a href="#over">More</a></p>
+@@ b[I.addr]||("meetbout "+b[I.id])
+== b[I.addr]||("settlement bolt "+b[I.id])
+@@ say("Link naar dit punt gekopieerd.")
+== say("Link to this point copied.")
+@@ return G[gi][0]||"Zonder adres";
+== return G[gi][0]||"No address";
+@@ (idx.length>1?" meetbouten":" meetbout")
+== (idx.length>1?" settlement bolts":" settlement bolt")
+@@ >Per meetbout: mm per jaar de laatste jaren · jaar van de laatste meting. Klik een regel voor details.</div>
+== >Per bolt: mm per year in recent years · year of the latest measurement. Click a row for details.</div>
+@@ const SOORT={N:"Nulmeting",H:"Herhalingsmeting"};
+== const SOORT={N:"Baseline measurement",H:"Repeat measurement"};
+@@ <p class="mnote">Vragen over deze meetgegevens, of klopt er iets niet? Neem contact op met de gemeente Amsterdam:
+== <p class="mnote">Questions about this data, or is something wrong? Please contact the City of Amsterdam:
+@@ <p class="mnote">Vragen over deze meetgegevens, of klopt er iets niet? Neem contact op met Rijkswaterstaat via het <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">contactformulier Servicedesk Data</a>.</p>
+== <p class="mnote">Questions about this data, or is something wrong? Please contact Rijkswaterstaat via the <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">Servicedesk Data contact form</a> (in Dutch).</p>
+@@ '<span>Eerder: <b>'
+== '<span>Earlier: <b>'
+@@ '<span>Totaal gezakt: <b>'
+== '<span>Total subsidence: <b>'
+@@ '<span>Klasse: <b>'
+== '<span>Class: <b>'
+@@ '<span>Laatste jaren: <b>'
+== '<span>Recent years: <b>'
+@@ '<span>Sinds 1e meting: <b>'
+== '<span>Since 1st measurement: <b>'
+@@ >Open bij de gemeente ↗</a>
+== >Open at the City of Amsterdam ↗</a>
+@@ <h3>Ruwe gegevens van de gemeente</h3>
+== <h3>Raw data from the City of Amsterdam</h3>
+@@ Kon de ruwe gegevens niet rechtstreeks ophalen (
+== Could not fetch the raw data directly (
+@@ Precies zoals de gemeente ze levert (API, JSON).
+== Exactly as the city supplies it (API, JSON).
+@@ mTitle.textContent=b[I.addr]||"Meetbout "+b[I.id];
+== mTitle.textContent=b[I.addr]||"Settlement bolt "+b[I.id];
+@@ mSub.textContent="Meetbout "+b[I.id]+(b[I.blk]?" · blok "+b[I.blk]
+== mSub.textContent="Settlement bolt "+b[I.id]+(b[I.blk]?" · block "+b[I.blk]
+@@ <p class="mnote">Meetgegevens ophalen bij de gemeente …</p>
+== <p class="mnote">Fetching measurement data from the city …</p>
+@@ <th>Datum</th><th>Soort meting</th><th class="n">Hoogte t.o.v. NAP (m)</th><th class="n">Zakking sinds vorige (mm)</th><th class="n">Totaal gezakt (mm)</th><th class="n">Dagen sinds vorige</th><th class="n">Gem. snelheid sinds start (mm/jaar)</th><th>Gemeten door</th><th>Methode</th>
+== <th>Date</th><th>Type of measurement</th><th class="n">Height relative to NAP (m)</th><th class="n">Subsidence since previous (mm)</th><th class="n">Total subsidence (mm)</th><th class="n">Days since previous</th><th class="n">Avg. rate since start (mm/year)</th><th>Measured by</th><th>Method</th>
+@@ <tr><td colspan="9">Geen metingen gevonden.</td></tr>
+== <tr><td colspan="9">No measurements found.</td></tr>
+@@ ' metingen. Geel gemarkeerd: de periode waarover de recente snelheid is berekend. Zakking is positief als het punt lager is komen te liggen.</p>'
+== ' measurements. Highlighted in yellow: the period over which the recent rate was calculated. Subsidence is positive when the point has moved down.</p>'
+@@ <div class="warn">De actuele gegevens konden niet bij de gemeente worden opgehaald. Hieronder de metingen zoals ze bij het maken van deze kaart zijn opgeslagen (datum bij benadering).</div>
+== <div class="warn">The current data could not be fetched from the city. Below are the measurements as they were stored when this map was made (dates approximate).</div>
+@@ <th>Datum</th><th class="n">Totaal gezakt (mm)</th>
+== <th>Date</th><th class="n">Total subsidence (mm)</th>
+@@ <tr><td colspan="2">Geen metingen opgeslagen.</td></tr>
+== <tr><td colspan="2">No measurements stored.</td></tr>
+@@ say("Niets gevonden voor “"+q+"”.")
+== say("Nothing found for “"+q+"”.")
+@@ say("Zoeken lukte niet. Probeer het later nog eens.")
+== say("Search failed. Please try again later.")
+@@ '">Cijfers voor gemeente '
+== '">Figures for the municipality of '
+@@ n:"wijk "+GB.w[wi][1]
+== n:"district "+GB.w[wi][1]
+@@ '">Alle meetbouten in de '+esc(sp.n)+', per huisnummer →</a>'
+== '">All settlement bolts on '+esc(sp.n)+', by house number →</a>'
+@@ '">Cijfers voor '+esc(st||"deze straat")+' in '
+== '">Figures for '+esc(st||"this street")+' in '
+@@ '">Cijfers voor '
+== '">Figures for '
+@@ '">Alle meetbouten in de '
+== '">All settlement bolts on '
+@@ function snelZin(v,n){const meer=n>1,st=v<0;return (st?(meer?"stijgen":"stijgt"):(meer?"zakken":"zakt"))+(meer?" doorgaans ":" ")+nf(Math.abs(v))+" mm per jaar";}
+== function snelZin(v,n){const meer=n>1,st=v<0;return (meer?"typically ":"")+(st?(meer?"rise":"rises"):(meer?"sink":"sinks"))+" "+nf(Math.abs(v))+" mm per year";}
+@@ d.push(o.b.v.length+" andere meetbout"+(o.b.v.length>1?"en ":" ")
+== d.push(o.b.v.length+" other settlement bolt"+(o.b.v.length>1?"s ":" ")
+@@ d.push(o.p.v.length+" ander"+(o.p.v.length>1?"e peilmerken ":" peilmerk ")
+== d.push(o.p.v.length+" other benchmark"+(o.p.v.length>1?"s ":" ")
+@@ '<div class="omg">In de buurt (binnen '+ROND_M+' m): '
+== '<div class="omg">Nearby (within '+ROND_M+' m): '
+@@ '</b>: geen binnen '+ROND_M+' m'+(isFinite(t.dichtst)?' (dichtstbijzijnde op '
+== '</b>: none within '+ROND_M+' m'+(isFinite(t.dichtst)?' (nearest at '
+@@ ' (snelheid van '+t.v.length+' bekend)'
+== ' (rate known for '+t.v.length+')'
+@@ ' · van geen enkele is een recente snelheid bekend':' · geen recente snelheid bekend'
+== ' · no recent rate known for any of them':' · no recent rate known'
+@@ ' · laatste meting '+t.laatste
+== ' · latest measurement '+t.laatste
+@@ '<div class="rt"><div><h2>Rond '+esc(naam)+'</h2><div class="rk">Alle meetpunten binnen '+ROND_M+' meter (de stippellijn op de kaart)</div>
+== '<div class="rt"><div><h2>Around '+esc(naam)+'</h2><div class="rk">All measuring points within '+ROND_M+' metres (the dotted line on the map)</div>
+@@ blok(o.b,"Meetbouten","meetbouten","meetbout")
+== blok(o.b,"Settlement bolts","settlement bolts","settlement bolt")
+@@ blok(o.p,"Peilmerken","peilmerken","peilmerk")
+== blok(o.p,"Benchmarks","benchmarks","benchmark")
+@@ '<p class="rs rk">Peilmerken laden …</p>'
+== '<p class="rs rk">Loading benchmarks …</p>'
+@@ <p class="rs rk">Satellietmetingen laden …</p>
+== <p class="rs rk">Loading satellite measurements …</p>
+@@ <p class="rs rk">Gemeten snelheden, zonder oordeel of advies. Klik op een punt voor details.</p>
+== <p class="rs rk">Measured rates, without judgement or advice. Click a point for details.</p>
+@@ '<p class="rs"><b>Satelliet</b>: hier is binnen '+ROND_M+' m niets gemeten.</p>'
+== '<p class="rs"><b>Satellite</b>: nothing has been measured within '+ROND_M+' m here.</p>'
+@@ '<p class="rs"><b>Satelliet: '+e.n+' blok'+(e.n>1?'ken':'')+' van 100 m</b>'
+== '<p class="rs"><b>Satellite: '+e.n+' block'+(e.n>1?'s':'')+' of 100 m</b>'
+@@ <span class="rk">Grond, straten en gebouwen samen, gemeten vanuit de ruimte (
+== <span class="rk">Ground, streets and buildings together, measured from space (
+@@ toonRond(e.latlng.lat,e.latlng.lng,"dit punt",2)
+== toonRond(e.latlng.lat,e.latlng.lng,"this point",2)
+@@ data-rond>Alles binnen '
+== data-rond>Everything within '
+@@ (k===1?" ster":" sterren")
+== (k===1?" star":" stars")
+@@ "Bedankt voor je feedback!"
+== "Thank you for your feedback!"
+@@ "Kies eerst 1 tot 5 sterren."
+== "Please choose 1 to 5 stars first."
+@@ "Versturen lukte niet. Probeer het later nog eens."
+== "Sending failed. Please try again later."
+@@ st.textContent="Versturen …";
+== st.textContent="Sending …";
+@@ napNote("Peilmerken laden …")
+== napNote("Loading benchmarks …")
+@@ napNote("De peilmerken konden niet worden geladen ("
+== napNote("The benchmarks could not be loaded ("
+@@ napNote("Uitgezoomd: per vakje de doorsnee van de peilmerken erin. Klik op een vakje of zoom in voor losse peilmerken.")
+== napNote("Zoomed out: each square shows the median of the benchmarks inside it. Click a square or zoom in for individual benchmarks.")
+@@ "Onzekere metingen":"Geen recente metingen of te weinig metingen"
+== "Uncertain measurements":"No recent or too few measurements"
+@@ '<div class="pop"><div class="ttl">Peilmerk '
+== '<div class="pop"><div class="ttl">NAP benchmark '
+@@ <p class="mnote">In de metingen zit een plotselinge sprong die niet te verklaren is (misschien een meetfout of een andere rekenmethode). Daarom is dit punt grijs.</p>
+== <p class="mnote">The measurements contain a sudden jump that cannot be explained (perhaps a measurement error or a different calculation method). That is why this point is grey.</p>
+@@ <p class="mnote">Een peilmerk is een metalen boutje in een gebouw of brug. Rijkswaterstaat meet eens per 5 tot 15 jaar hoe hoog het ligt. Het zakt mee met de grond in de omgeving.</p>
+== <p class="mnote">A benchmark is a small metal bolt in a building or bridge. Rijkswaterstaat measures its height once every 5 to 15 years. It moves with the ground in the surrounding area.</p>
+@@ <div class="sub" style="margin-top:4px">Bron: Rijkswaterstaat</div>
+== <div class="sub" style="margin-top:4px">Source: Rijkswaterstaat</div>
+@@ rondLink(el,r[NI.lat],r[NI.lon],"peilmerk "+r[NI.p],6)
+== rondLink(el,r[NI.lat],r[NI.lon],"benchmark "+r[NI.p],6)
+@@ >Open bij Rijkswaterstaat ↗</a>
+== >Open at Rijkswaterstaat ↗</a>
+@@ <h3>Ruwe gegevens van Rijkswaterstaat</h3>
+== <h3>Raw data from Rijkswaterstaat</h3>
+@@ Precies zoals Rijkswaterstaat ze levert (JSON).
+== Exactly as Rijkswaterstaat supplies it (JSON).
+@@ mTitle.textContent="Peilmerk "+r[NI.p]+" (Rijkswaterstaat)";
+== mTitle.textContent="NAP benchmark "+r[NI.p]+" (Rijkswaterstaat)";
+@@ <p class="mnote">Meetgegevens ophalen bij Rijkswaterstaat …</p>
+== <p class="mnote">Fetching measurement data from Rijkswaterstaat …</p>
+@@ "fout bij Rijkswaterstaat"
+== "error at Rijkswaterstaat"
+@@ (u?"ja":"nee")
+== (u?"yes":"no")
+@@ <th>Datum</th><th class="n">Hoogte t.o.v. NAP (m)</th><th class="n">Zakking sinds vorige (mm)</th><th class="n">Totaal gezakt (mm)</th><th>Project</th><th>Projecttitel</th><th class="n">Orde</th><th>Gebruikt</th>
+== <th>Date</th><th class="n">Height relative to NAP (m)</th><th class="n">Subsidence since previous (mm)</th><th class="n">Total subsidence (mm)</th><th>Project</th><th>Project title</th><th class="n">Order</th><th>Used</th>
+@@ <tr><td colspan="8">Geen metingen gevonden.</td></tr>
+== <tr><td colspan="8">No measurements found.</td></tr>
+@@ +' metingen'+(items.length!==nUsed?', waarvan '+nUsed+' gebruikt in de berekening':'')+'. Geel gemarkeerd: de periode waarover de recente snelheid is berekend.'+
+== +' measurements'+(items.length!==nUsed?', of which '+nUsed+' used in the calculation':'')+'. Highlighted in yellow: the period over which the recent rate was calculated.'+
+@@ ' Grijs: oude waarden uit vóór de herziening van het NAP-stelsel. Rijkswaterstaat heeft die metingen later herrekend; de kaart gebruikt alleen de herrekende waarden (project met &ldquo;=&rdquo;), anders ontstaan schijnbare sprongen van centimeters.'
+== ' Grey: old values from before the revision of the NAP system. Rijkswaterstaat later recalculated those measurements; the map only uses the recalculated values (project with &ldquo;=&rdquo;), otherwise apparent jumps of centimetres would appear.'
+@@ ' Zakking is positief als het punt lager is komen te liggen. Metingen binnen één jaar tellen in de berekening als één meetcampagne.</p>'
+== ' Subsidence is positive when the point has moved down. Measurements within one year count as one measuring campaign in the calculation.</p>'
+@@ <div class="warn">De actuele gegevens konden niet bij Rijkswaterstaat worden opgehaald. Hieronder de meetreeks zoals die bij het maken van deze kaart is opgeslagen (per meetcampagne, datum bij benadering).</div>
+== <div class="warn">The current data could not be fetched from Rijkswaterstaat. Below is the measurement series as it was stored when this map was made (per measuring campaign, dates approximate).</div>
+@@ <tr><td colspan="2">Geen meetreeks opgeslagen.</td></tr>
+== <tr><td colspan="2">No measurement series stored.</td></tr>
+@@ say("Peilmerk “"+q+"” niet gevonden.")
+== say("Benchmark “"+q+"” not found.")
+@@ return Math.abs(z)<0.05?"beweegt niet meetbaar":z>0?"zakt "+nf(z,1)+" mm/jaar":"stijgt "+nf(-z,1)+" mm/jaar";
+== return Math.abs(z)<0.05?"no measurable movement":z>0?"sinks "+nf(z,1)+" mm/year":"rises "+nf(-z,1)+" mm/year";
+@@ egNote("Satellietgegevens laden …")
+== egNote("Loading satellite data …")
+@@ egNote("De satellietgegevens konden niet worden geladen.")
+== egNote("The satellite data could not be loaded.")
+@@ '<div class="pop"><div class="ttl">Bodemdaling gemeten vanuit de ruimte</div>'
+== '<div class="pop"><div class="ttl">Subsidence measured from space</div>'
+@@ (info?"Doorsnee van "+info+" blokken van 100 m":"Blok van 100 × 100 meter")+' · gemeten '
+== (info?"Median of "+info+" blocks of 100 m":"Block of 100 × 100 metres")+' · measured '
+@@ (onz?"Onzekere meting":egTekst(v))
+== (onz?"Uncertain measurement":egTekst(v))
+@@ '<p class="mnote">Satellieten meten met radar de hoogte van grond, straten en gebouwen samen; per blok is dat een gemiddelde. '+
+== '<p class="mnote">Satellites use radar to measure the height of ground, streets and buildings together; for each block that is an average. '+
+@@ 'Een huis op palen kan stil staan terwijl de straat ervoor zakt, en andersom. Meetbouten en peilmerken meten wél één punt aan één gebouw.</p>'+
+== 'A house on piles can stand still while the street in front of it sinks, and vice versa. Settlement bolts and benchmarks do measure one point on one building.</p>'+
+@@ '<div class="sub" style="margin-top:4px">Bron: Copernicus, het aardobservatieprogramma van de EU ('
+== '<div class="sub" style="margin-top:4px">Source: Copernicus, the EU\'s Earth observation programme ('
+@@ lat,lon,"dit vak")
+== lat,lon,"this block")
+@@ "Uitgezoomd: per blok van ongeveer 5 km de doorsnee. Zoom in voor meer detail."
+== "Zoomed out: the median per block of about 5 km. Zoom in for more detail."
+@@ "Per blok van ongeveer 1 km de doorsnee. Zoom verder in voor blokken van 100 m."
+== "The median per block of about 1 km. Zoom in further for blocks of 100 m."
+@@ egNote("Blokken van 100 m. Geen kleur betekent: daar is niets gemeten (zoals weilanden en water). Klik op een blok voor de snelheid.")
+== egNote("Blocks of 100 m. No colour means nothing was measured there (such as meadows and water). Click a block for the rate.")
+@@ function egZin(m){return Math.abs(m)<0.05?"de grond beweegt doorgaans niet meetbaar":m>0?"de grond zakt doorgaans "+nf(m,1)+" mm per jaar":"de grond stijgt doorgaans "+nf(-m,1)+" mm per jaar";}
+== function egZin(m){return Math.abs(m)<0.05?"the ground typically shows no measurable movement":m>0?"the ground typically sinks "+nf(m,1)+" mm per year":"the ground typically rises "+nf(-m,1)+" mm per year";}
+@@ const t="Satelliet (binnen "+ROND_M+" m): "+egZin(median(o.v))+" ("+o.v.length+" blokken van 100 m).";
+== const t="Satellite (within "+ROND_M+" m): "+egZin(median(o.v))+" ("+o.v.length+" blocks of 100 m).";
+@@ d.push(j>=1200&&j<=new Date().getFullYear()+5?"gebouwd in "+j:"bouwjaar onbekend");
+== d.push(j>=1200&&j<=new Date().getFullYear()+5?"built in "+j:"year of construction unknown");
+@@ if(n>0)d.push(n+(n>1?" adressen":" adres"));
+== if(n>0)d.push(n+(n>1?" addresses":" address"));
+@@ '<p class="pand"><b>Pand:</b> '
+== '<p class="pand"><b>Building:</b> '
+@@ x=y?{u:y.u,n:"de "+y.n}:null;
+== x=y?{u:y.u,n:y.n}:null;
+@@ '">← Terug naar '+esc(x.n)+'</a><button type="button" aria-label="Verbergen">×</button>'
+== '">← Back to '+esc(x.n)+'</a><button type="button" aria-label="Hide">×</button>'
+@@ say("Meetpunt “"+pt+"” niet gevonden.")
+== say("Measuring point “"+pt+"” not found.")
+@@ throw new Error("onverwacht formaat")
+== throw new Error("unexpected format")
+@@ "nl-NL"
+== "en-GB"
+@@ mm/jaar
+== mm/year
+"""
+
+
+def _kaart_en_tabel():
+    paren, nl = [], None
+    for regel in KAART_EN.split("\n"):
+        if regel.startswith("@@ "):
+            nl = regel[3:]
+        elif regel.startswith("== ") and nl is not None:
+            paren.append((nl, regel[3:]))
+            nl = None
+    return paren
+
+
+def kaart_en(page):
+    """Maakt van de Nederlandse kaartpagina de Engelse. Stopt als een Nederlands stuk niet (meer) voorkomt."""
+    mist = []
+    for nl, en in _kaart_en_tabel():
+        if nl not in page:
+            mist.append(nl)
+            continue
+        page = page.replace(nl, en)
+    if mist:
+        raise RuntimeError("Engelse kaart: deze Nederlandse tekst staat niet (meer) in de kaart; pas KAART_EN aan:\n  "
+                           + "\n  ".join(m[:120] for m in mist))
+    return page
 
 
 def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, extra_paden=(), og_url="", nav=None):
@@ -2835,6 +3442,8 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
     data = json.dumps({"b": core, "g": G, "meta": meta}, ensure_ascii=False, separators=(",", ":"))
     write_text(os.path.join(out_dir, "data.json"), data)
 
+    fout_nl = '"De kaartgegevens konden niet worden geladen ("+(e&&e.message||e)+"). Ververs de pagina of probeer het later nog eens."'
+    fout_en = '"The map data could not be loaded ("+(e&&e.message||e)+"). Refresh the page or try again later."'
     boot = SITE_BOOT.replace("__DATAURL__", "data.json?v=" + short_hash(data))
 
     # zoekmachines: canonical adres, Open Graph, robots.txt en sitemap.xml
@@ -2842,19 +3451,30 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
     if not site_url.endswith("/"):
         site_url += "/"
     esc = lambda s: (s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;"))
-    descr = ("Onafhankelijke kaart van zakkende gebouwen in Nederland, op basis van open data: de NAP-peilmerken van "
-             "Rijkswaterstaat en, in Amsterdam, de meetbouten van de gemeente. Zoek je adres en zie hoe snel het zakt.")
-    head = [
-        f'<link rel="canonical" href="{esc(site_url)}">',
-        '<meta property="og:type" content="website">',
-        '<meta property="og:locale" content="nl_NL">',
-        '<meta property="og:title" content="Zakkingskaart">',
-        f'<meta property="og:description" content="{esc(descr)}">',
-        f'<meta property="og:url" content="{esc(site_url)}">',
-    ] + _og_beeld(og_url)
+    descr = {"nl": ("Onafhankelijke kaart van zakkende gebouwen in Nederland, op basis van open data: de NAP-peilmerken van "
+                    "Rijkswaterstaat en, in Amsterdam, de meetbouten van de gemeente. Zoek je adres en zie hoe snel het zakt."),
+             "en": ("Independent map of sinking buildings in the Netherlands, based on open data: the NAP benchmarks of "
+                    "Rijkswaterstaat and, in Amsterdam, the city's settlement bolts. Search your address and see how fast it is sinking.")}
+    hreflang = [f'<link rel="alternate" hreflang="nl" href="{esc(site_url)}">',
+                f'<link rel="alternate" hreflang="en" href="{esc(site_url)}en/">',
+                f'<link rel="alternate" hreflang="x-default" href="{esc(site_url)}">']
     gv = re.sub(r"[^A-Za-z0-9_\-]", "", args.google_verificatie.strip())
-    if gv:
-        head.append(f'<meta name="google-site-verification" content="{gv}">')
+
+    def kop(taal):
+        url = site_url + ("en/" if taal == "en" else "")
+        h = [
+            f'<link rel="canonical" href="{esc(url)}">',
+            '<meta property="og:type" content="website">',
+            f'<meta property="og:locale" content="{"en_GB" if taal == "en" else "nl_NL"}">',
+            '<meta property="og:title" content="Zakkingskaart">',
+            f'<meta property="og:description" content="{esc(descr[taal])}">',
+            f'<meta property="og:url" content="{esc(url)}">',
+        ] + hreflang + _og_beeld(og_url, taal)
+        if gv and taal == "nl":
+            h.append(f'<meta name="google-site-verification" content="{gv}">')
+        return h
+
+    en_paden = ["en/"] + ["en/" + p for p in extra_paden]
     write_text(os.path.join(out_dir, "robots.txt"), f"User-agent: *\nAllow: /\nSitemap: {site_url}sitemap.xml\n")
     write_text(os.path.join(out_dir, "sitemap.xml"),
                '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -2862,16 +3482,38 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
                f'  <url><loc>{esc(site_url)}</loc><lastmod>{meta["generated"]}</lastmod>'
                '<changefreq>weekly</changefreq></url>\n'
                + "".join(f'  <url><loc>{esc(site_url + p)}</loc><lastmod>{meta["generated"]}</lastmod></url>\n'
-                         for p in extra_paden)
+                         for p in list(extra_paden) + en_paden)
                + '</urlset>\n')
 
+    gebied = "gemeenten/" in extra_paden
+    betr = "betrouwbaarheid/" in extra_paden
     page = (HTML_TEMPLATE
-            .replace("__HEAD_EXTRA__", "\n".join(head))
-            .replace("__GEBIEDLINK__", (' · <a href="gemeenten/">Cijfers per gemeente en buurt</a>' if "gemeenten/" in extra_paden else "")
-                     + (' · <a href="betrouwbaarheid/">Hoe goed klopt de satelliet?</a>' if "betrouwbaarheid/" in extra_paden else ""))
+            .replace("__HEAD_EXTRA__", "\n".join(kop("nl")))
+            .replace("__GEBIEDLINK__", (' · <a href="gemeenten/">Cijfers per gemeente en buurt</a>' if gebied else "")
+                     + (' · <a href="betrouwbaarheid/">Hoe goed klopt de satelliet?</a>' if betr else ""))
+            .replace("__TAALLINK__", ' · <a href="en/" id="taalLink" hreflang="en" lang="en">English</a>')
+            .replace("__INTROTAAL__", ' · <a href="en/" hreflang="en" lang="en">English</a>')
             .replace("__LEAFLET_CSS__", "leaflet/leaflet.css?v=" + LEAFLET_VERSION)
             .replace("__LEAFLET_JS__", "leaflet/leaflet.js?v=" + LEAFLET_VERSION)
-            .replace("__BOOT__", boot))
+            .replace("__BOOT__", boot.replace("__FOUTTEKST__", fout_nl)))
+
+    # Engelse kaart in /en/: dezelfde gegevens (opgehaald uit de map erboven), Engelse teksten
+    shim = ('(function(){var f=window.fetch;if(!f)return;window.fetch=function(u,o){'
+            'if(typeof u==="string"&&!/^([a-z][a-z0-9+.-]*:|\\/|\\.\\.\\/)/i.test(u))u="../"+u;return f.call(window,u,o);};})();')
+    page_en = (HTML_TEMPLATE
+               .replace("__HEAD_EXTRA__", "\n".join(kop("en")))
+               .replace("__GEBIEDLINK__", (' · <a href="gemeenten/">Figures by municipality and neighbourhood</a>' if gebied else "")
+                        + (' · <a href="betrouwbaarheid/">How accurate is the satellite?</a>' if betr else ""))
+               .replace("__TAALLINK__", ' · <a href="../" id="taalLink" hreflang="nl" lang="nl">Nederlands</a>')
+               .replace("__INTROTAAL__", ' · <a href="../" hreflang="nl" lang="nl">Nederlands</a>')
+               .replace("__LEAFLET_CSS__", "../leaflet/leaflet.css?v=" + LEAFLET_VERSION)
+               .replace("__LEAFLET_JS__", "../leaflet/leaflet.js?v=" + LEAFLET_VERSION))
+    page_en = kaart_en(page_en)
+    assert page_en.count("<script>\nwindow.__showErr=") == 1
+    page_en = page_en.replace("<script>\nwindow.__showErr=", "<script>\n" + shim + "\nwindow.__showErr=")
+    page_en = page_en.replace("__BOOT__", boot.replace("__FOUTTEKST__", fout_en))
+    os.makedirs(os.path.join(out_dir, "en"), exist_ok=True)
+    write_text(os.path.join(out_dir, "en", "index.html"), page_en)
     html_path = os.path.join(out_dir, "index.html")
     write_text(html_path, page)
     write_text(os.path.join(out_dir, ".nojekyll"), "")
@@ -2884,12 +3526,12 @@ SITE_BOOT = r"""(function(){
 var el=document.getElementById("loading");el.hidden=false;
 fetch("__DATAURL__").then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
 .then(function(D){el.hidden=true;zkStart(D);})
-.catch(function(e){el.className="err";el.textContent="De kaartgegevens konden niet worden geladen ("+(e&&e.message||e)+"). Ververs de pagina of probeer het later nog eens.";el.hidden=false;});
+.catch(function(e){el.className="err";el.textContent=__FOUTTEKST__;el.hidden=false;});
 })();"""
 
 
 def main():
-    global API
+    global API, TAAL, SITE_BASIS
     ap = argparse.ArgumentParser(description="Maak een zakkingskaart van alle meetbouten in Amsterdam.")
     ap.add_argument("--site", action="store_true",
                     help="website maken: index.html + data.json + reeksen.json in de map 'site', "
@@ -3151,16 +3793,27 @@ def main():
             log(f"   let op: voorbeeldplaatje niet gemaakt ({e.__class__.__name__}: {e})")
         if not args.zonder_gebieden:
             if gem:
+                SITE_BASIS = site_url
+                css = "gebied.css?v=" + short_hash(GEBIED_CSS)
                 try:
-                    paden, nav = write_gebieden(out_dir, site_url, "gebied.css?v=" + short_hash(GEBIED_CSS), args, now_y,
+                    paden, nav = write_gebieden(out_dir, site_url, css, args, now_y,
                                            today, nap[0] if nap else [], rows, gem, buurten, og_url,
                                            egms if meta.get("egmsUrl") else None)
+                    log("Dezelfde pagina's in het Engels (map en/):")
+                    TAAL = "en"  # dezelfde pagina's in het Engels, in /en/
+                    try:
+                        write_gebieden(os.path.join(out_dir, "en"), site_url + "en/", css, args, now_y,
+                                       today, nap[0] if nap else [], rows, gem, buurten, og_url,
+                                       egms if meta.get("egmsUrl") else None)
+                    finally:
+                        TAAL = "nl"
                 except Exception as e:  # pagina's mogen de kaart nooit tegenhouden
                     log(f"   let op: pagina's per gemeente niet gemaakt ({e.__class__.__name__}: {e})")
                     paden, nav = [], None
                     import shutil
                     for d in ("gemeente", "gemeenten", "betrouwbaarheid"):
                         shutil.rmtree(os.path.join(out_dir, d), ignore_errors=True)
+                        shutil.rmtree(os.path.join(out_dir, "en", d), ignore_errors=True)
         html_path = write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap, paden, og_url, nav)
         csv_path = os.path.join(out_dir, "meetbouten_analyse.csv")
         if not args.proef:
@@ -3174,6 +3827,8 @@ def main():
         page = (HTML_TEMPLATE
                 .replace("__HEAD_EXTRA__", "")
                 .replace("__GEBIEDLINK__", "")
+                .replace("__TAALLINK__", "")
+                .replace("__INTROTAAL__", "")
                 .replace("__LEAFLET_CSS__", "https://unpkg.com/leaflet@%s/dist/leaflet.css" % LEAFLET_VERSION)
                 .replace("__LEAFLET_JS__", "https://unpkg.com/leaflet@%s/dist/leaflet.js" % LEAFLET_VERSION)
                 .replace("__BOOT__", "zkStart(__DATA__);")
@@ -3425,7 +4080,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <li>Vragen over de gegevens, of klopt er iets niet? Die gaan naar de bron: de gemeente Amsterdam of Rijkswaterstaat. Wat zij aanpassen, komt vanzelf op deze kaart.</li>
   </ul>
   <p class="iakk">Door verder te gaan, ga je ermee akkoord dat je deze kaart gebruikt zoals hij is, en dat je er <b>geen rechten aan kunt ontlenen</b>.</p>
-  <div class="iact"><a href="#over" id="iMore">Over &amp; disclaimer</a><button id="iOk" type="button">Akkoord, naar de kaart</button></div></div></div>
+  <div class="iact"><span><a href="#over" id="iMore">Over &amp; disclaimer</a>__INTROTAAL__</span><button id="iOk" type="button">Akkoord, naar de kaart</button></div></div></div>
 </div>
 <div id="aboutModal" hidden role="dialog" aria-modal="true" aria-labelledby="aTitle">
   <div class="mbox"><div class="mhead"><div><h2 id="aTitle">Over deze kaart</h2></div><button id="aClose" type="button" aria-label="Sluiten">&times;</button></div>
@@ -3473,7 +4128,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
 </div>
 <aside id="legend" class="panel">
   <div class="head"><h1>Zakkingskaart</h1><div class="btns"><button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="In- of uitklappen">–</button></div></div>
-  <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>__GEBIEDLINK__</p>
+  <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>__GEBIEDLINK____TAALLINK__</p>
   <div class="body">
     <div class="rows" id="rows"></div>
     <p class="note" id="viewnote">De getallen tellen de meetbouten die je nu op de kaart ziet.</p>
@@ -3512,6 +4167,8 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
 window.__showErr=function(t){var d=document.getElementById("err");if(!d){d=document.createElement("div");d.id="err";
 d.style.cssText="position:absolute;left:12px;right:12px;bottom:40px;z-index:3000;background:#fde8e6;color:#7a1c12;border:1px solid #e9a79f;border-radius:8px;padding:10px 12px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;max-height:40%;overflow:auto";
 document.body.appendChild(d);d.textContent="Er ging iets mis bij het tekenen van de meetbouten. Stuur deze melding door:\n\n";}d.textContent+=t+"\n";};
+// taalkeuze: neem de plek op de kaart mee (?kaart=, ?punt=) naar de andere taal
+(function(){var t=document.getElementById("taalLink");if(t)t.addEventListener("click",function(){t.href=t.getAttribute("href").split("?")[0]+location.search;});})();
 window.addEventListener("error",function(e){window.__showErr((e.message||"fout")+" (regel "+e.lineno+":"+e.colno+")");});
 // "Over & disclaimer": werkt los van de kaart, ook als de data niet laadt. Deelbaar als #over.
 (function(){var m=document.getElementById("aboutModal"),prev=null;
