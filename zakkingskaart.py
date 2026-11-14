@@ -1686,6 +1686,7 @@ def _pagina(titel, beschrijving, canon, root, css, kruimel, inhoud, datum, og_ur
        "Independent initiative, separate from the municipality and Rijkswaterstaat. This page shows public measurement data in a simpler way and gives no judgement or advice about buildings, the ground or their value. No rights can be derived from the data. Questions about the measurements go to the source: see")} <a href="{root}#over">{T("Over &amp; disclaimer", "About &amp; disclaimer")}</a>.</p>
 <p>{T("Bronnen: Rijkswaterstaat, NAP-peilmerken (CC0); gemeente Amsterdam, meetbouten en gebiedsindeling (CC0); Kadaster, Bestuurlijke Gebieden (CC BY 4.0)",
        "Sources: Rijkswaterstaat, NAP benchmarks (CC0); City of Amsterdam, settlement bolts and area boundaries (CC0); Kadaster, Administrative Areas (CC BY 4.0)")}{bron_extra}. {T("Bijgewerkt", "Updated")}: {_h(datum)}.</p>
+<p>&copy; Zakkingskaart · <a href="{root}voorwaarden/">{T("Gebruiksvoorwaarden en bronvermelding", "Terms of use and attribution")}</a></p>
 </div></footer>
 </body>
 </html>
@@ -2381,6 +2382,12 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
           "en de recente zakkingssnelheid.", "For each municipality in the Netherlands a summary of the public NAP measurements by "
           "Rijkswaterstaat: number of benchmarks and the recent subsidence rate."), f"{site_url}gemeenten/", root, root + root_css,
         [("Zakkingskaart", root), (T("Gemeenten", "Municipalities"), None)], "\n".join(delen), datum, og_url, bool(egms)))
+    schrijf("voorwaarden", _pagina(
+        T("Gebruiksvoorwaarden en bronvermelding | Zakkingskaart", "Terms of use and attribution | Zakkingskaart"),
+        T("Hoe je Zakkingskaart mag gebruiken, welke openbare bronnen de kaart gebruikt en onder welke licentie.",
+          "How you may use Zakkingskaart, which public sources the map uses and under which licence."),
+        f"{site_url}voorwaarden/", root, root + root_css,
+        [("Zakkingskaart", root), (T("Gebruiksvoorwaarden", "Terms of use"), None)], voorwaarden_html(), datum, og_url, bool(egms)))
     write_text(os.path.join(out_dir, root_css.split("?")[0]), GEBIED_CSS)
     log(f"         {len(paden)} pagina's geschreven")
     nav = {"g": [[slugs[i], g["naam"], str(g.get("code") or "")] for i, g in enumerate(gemeenten)],
@@ -2391,6 +2398,72 @@ def write_gebieden(out_dir, site_url, root_css, args, now_y, today, nap_rows, ro
            "bw": buurt_wijk,
            "s": [[st["slug"], st["naam"]] for st in straten_a], "st": bout_straat}
     return paden, nav
+
+
+# --------------------------------------------------------------------------
+# Gebruiksvoorwaarden en bronvermelding (pagina /voorwaarden/)
+# --------------------------------------------------------------------------
+BRONNEN = [  # (bron, wat, licentie, adres)
+    ("Gemeente Amsterdam", ("meetbouten, buurten en wijken", "settlement bolts, neighbourhoods and districts"), "CC0",
+     "https://api.data.amsterdam.nl/v1/meetbouten/"),
+    ("Rijkswaterstaat", ("NAP-peilmerken", "NAP benchmarks"), "CC0", "https://www.rijkswaterstaat.nl/"),
+    ("Copernicus Land Monitoring Service (EU)", ("bodembeweging, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data",
+                                               "ground motion, European Ground Motion Service (EGMS); contains modified Copernicus Sentinel data"),
+     ("vrij gebruik met bronvermelding", "free use with attribution"), "https://land.copernicus.eu/en/products/european-ground-motion-service"),
+    ("Kadaster", ("Bestuurlijke Gebieden (gemeentegrenzen), achtergrondkaart (BRT) via PDOK", "Administrative Areas (municipal boundaries), background map (BRT) via PDOK"),
+     "CC BY 4.0", "https://www.pdok.nl/"),
+    ("Kadaster", ("Basisregistratie Adressen en Gebouwen (BAG), via PDOK", "Key Register of Addresses and Buildings (BAG), via PDOK"),
+     ("publiek domein", "public domain"), "https://www.pdok.nl/"),
+    ("PDOK Locatieserver", ("adressen zoeken", "address search"), ("open dienst van de overheid", "open government service"), "https://www.pdok.nl/"),
+    ("Leaflet", ("kaartbibliotheek", "map library"), "BSD-2-Clause", "https://leafletjs.com/"),
+]
+
+
+def voorwaarden_html():
+    rij = "".join(
+        f'<tr><td>{_h(b)}</td><td>{_h(T(*w) if isinstance(w, tuple) else w)}</td><td>{_h(T(*l) if isinstance(l, tuple) else l)}</td>'
+        f'<td><a href="{_h(u)}" rel="noopener">{_h(u.split("/")[2])}</a></td></tr>' for b, w, l, u in BRONNEN)
+    tabel = (f'<div class="tabel"><table><thead><tr><th>{T("Bron", "Source")}</th><th>{T("Wat", "What")}</th>'
+             f'<th>{T("Licentie", "Licence")}</th><th>{T("Website", "Website")}</th></tr></thead><tbody>{rij}</tbody></table></div>')
+    return T(f"""<h1>Gebruiksvoorwaarden en bronvermelding</h1>
+<p class="lead">Zakkingskaart is een onafhankelijk initiatief. Het is geen officiële bron en niet van een gemeente of van Rijkswaterstaat.</p>
+<h2>Wat mag</h2>
+<ul><li>De kaart en de pagina's bekijken, en er met een link naar verwijzen of ze delen.</li>
+<li>Een schermafbeelding gebruiken voor persoonlijk gebruik, onderwijs of journalistiek, met vermelding van &ldquo;Zakkingskaart&rdquo;.</li></ul>
+<h2>Wat niet mag zonder toestemming</h2>
+<ul><li>De kaart, de pagina's of de gegevensbestanden van deze site automatisch en in grote hoeveelheden downloaden (scrapen).</li>
+<li>De samengestelde gegevens, de teksten, de opmaak of de rekenmethode overnemen voor een eigen dienst of product, betaald of onbetaald.</li>
+<li>De inhoud gebruiken om AI-modellen te trainen.</li></ul>
+<h2>Rechten</h2>
+<p>&copy; Zakkingskaart. De teksten, de opmaak, de programmatuur en de samengestelde gegevensbestanden van deze site zijn beschermd door het
+auteursrecht en, voor zover van toepassing, het databankenrecht. Daarnaast blijven de onderliggende brongegevens vallen onder de licentie van
+de bron (zie hieronder). Wie die brongegevens wil gebruiken, kan ze bij de bron zelf ophalen.</p>
+<h2>Bronnen en licenties</h2>{tabel}
+<p>De gegevens zijn bewerkt: omgerekend naar een snelheid, samengevat per gebied en naast elkaar gelegd. De bronnen zijn niet verantwoordelijk
+voor deze bewerking.</p>
+<h2>Disclaimer</h2>
+<p>De kaart geeft openbare meetgegevens eenvoudiger weer, zonder oordeel of advies over gebouwen, de grond of de waarde ervan. Aan de kaart
+kunnen geen rechten worden ontleend. Vragen over een meting gaan naar de bron. Opmerkingen over de site zelf kunnen via de knop
+&ldquo;Feedback&rdquo; op de kaart.</p>""", f"""<h1>Terms of use and attribution</h1>
+<p class="lead">Zakkingskaart is an independent initiative. It is not an official source and not run by a municipality or by Rijkswaterstaat.</p>
+<h2>What is allowed</h2>
+<ul><li>Viewing the map and the pages, and linking to or sharing them.</li>
+<li>Using a screenshot for personal use, education or journalism, crediting &ldquo;Zakkingskaart&rdquo;.</li></ul>
+<h2>What is not allowed without permission</h2>
+<ul><li>Automatically downloading the map, the pages or the data files of this site in bulk (scraping).</li>
+<li>Copying the compiled data, the texts, the design or the method for your own service or product, paid or unpaid.</li>
+<li>Using the content to train AI models.</li></ul>
+<h2>Rights</h2>
+<p>&copy; Zakkingskaart. The texts, the design, the software and the compiled data files of this site are protected by copyright and, where
+applicable, database right. The underlying source data remains subject to the licence of its source (see below). Anyone who wants to use that
+source data can obtain it from the source itself.</p>
+<h2>Sources and licences</h2>{tabel}
+<p>The data has been processed: converted into a rate, summarised per area and put side by side. The sources are not responsible for this
+processing.</p>
+<h2>Disclaimer</h2>
+<p>The map shows public measurement data in a simpler way, without judgement or advice about buildings, the ground or their value. No rights
+can be derived from the map. Questions about a measurement go to the source. Comments about the site itself can be sent with the
+&ldquo;Feedback&rdquo; button on the map. This English version is a translation; in case of differences, the Dutch text prevails.</p>""")
 
 
 # --------------------------------------------------------------------------
@@ -3044,6 +3117,8 @@ KAART_EN = r"""
 == <p>The colour depends only on how fast a measuring point has sunk in recent years: green for less than 1 mm per year, yellow for 1 to 2 mm per year, red for 2 mm per year or more. Stabilised: first at least 1.5 and now less than 0.5 mm per year. Grey: no recent or too few measurements. The limits of 1 and 2 mm per year are also class limits on the City of Amsterdam's settlement bolt map, which likewise runs from green via yellow to red. The colours only describe the measured rate; they do not say whether something is good or bad. Under &ldquo;Adjust limits&rdquo; you can choose other limits yourself.</p>
 @@ <p>Deze kaart geeft openbare meetgegevens van de gemeente Amsterdam en Rijkswaterstaat eenvoudiger weer en rekent ze om naar een snelheid. Daarbij kan ze afwijken van de weergave van de bron. De kaart geeft geen oordeel of advies over gebouwen, de grond of de waarde ervan, en kan onvolledig of verouderd zijn. De kaart wordt met zorg gemaakt, maar zonder garantie. Wie de kaart gebruikt, doet dat op eigen verantwoordelijkheid; aan de kaart kunnen geen rechten worden ontleend en de beheerder is niet aansprakelijk voor gevolgen van het gebruik, voor zover de wet dat toestaat.</p>
 == <p>This map shows public measurement data from the City of Amsterdam and Rijkswaterstaat in a simpler way and converts it into a rate. In doing so it may differ from how the source presents the data. The map gives no judgement or advice about buildings, the ground or their value, and may be incomplete or out of date. The map is made with care, but without any guarantee. Anyone who uses the map does so at their own risk; no rights can be derived from the map and the maintainer is not liable for any consequences of its use, to the extent permitted by law. This English version is a translation; in case of differences, the Dutch text prevails.</p>
+@@ >gebruiksvoorwaarden en bronvermelding</a>.</p>
+== >terms of use and attribution</a>.</p>
 @@ <h3>Vragen over de gegevens</h3>
 == <h3>Questions about the data</h3>
 @@ <p>Deze site beheert de meetgegevens niet en kan ze niet aanpassen. Heb je een vraag over een meting, of denk je dat er iets niet klopt? Neem dan contact op met de bron:</p>
@@ -3060,8 +3135,8 @@ KAART_EN = r"""
 == <p>This site uses no cookies and does not track visitors. We only count anonymously how often the map is opened per day, from a phone or a computer, via which kind of source (for example a search engine or another website) and how often people search and click. No IP addresses or other characteristics of you are stored. Your map settings are only kept in your own browser. The site is hosted by GitHub, the background map comes from PDOK, an address you search for outside the map data is looked up at the government's PDOK Locatieserver, the year of construction of the building at a clicked spot is requested from PDOK's BAG service, and &ldquo;View all measurement data&rdquo; fetches data from the City of Amsterdam or from Rijkswaterstaat; as with any website, those parties see your IP address. Feedback arrives as an email to the maintainer; no name or email address is asked for. The addresses at the measuring points come from the public data of the city and Rijkswaterstaat; questions about them go to the source (see &ldquo;Questions about the data&rdquo;).</p>
 @@ <h3>Bronnen</h3>
 == <h3>Sources</h3>
-@@ <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. Bouwjaar en adressen per pand: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (publiek domein). NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode:
-== <p>Settlement bolts: City of Amsterdam (api.data.amsterdam.nl). Background map: PDOK / Kadaster (CC BY 4.0). Address search: PDOK Locatieserver. Year of construction and addresses per building: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (public domain). NAP benchmarks: Rijkswaterstaat (CC0). Ground motion: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); contains modified Copernicus Sentinel data. Municipal boundaries (for the pages per municipality): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); neighbourhood boundaries Amsterdam: City of Amsterdam (CC0). Map library: Leaflet (BSD-2). Source code and method:
+@@ <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. Bouwjaar en adressen per pand: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (publiek domein). NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). &copy; Zakkingskaart. Zie ook de
+== <p>Settlement bolts: City of Amsterdam (api.data.amsterdam.nl). Background map: PDOK / Kadaster (CC BY 4.0). Address search: PDOK Locatieserver. Year of construction and addresses per building: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (public domain). NAP benchmarks: Rijkswaterstaat (CC0). Ground motion: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); contains modified Copernicus Sentinel data. Municipal boundaries (for the pages per municipality): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); neighbourhood boundaries Amsterdam: City of Amsterdam (CC0). Map library: Leaflet (BSD-2). &copy; Zakkingskaart. See also the
 @@ title="In- of uitklappen"
 == title="Expand or collapse"
 @@ <p class="indep">Onafhankelijk initiatief, los van gemeente en Rijkswaterstaat · <a href="#over" id="aboutLink">Over &amp; disclaimer</a>
@@ -3485,7 +3560,10 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
         return h
 
     en_paden = ["en/"] + ["en/" + p for p in extra_paden]
-    write_text(os.path.join(out_dir, "robots.txt"), f"User-agent: *\nAllow: /\nSitemap: {site_url}sitemap.xml\n")
+    ai_bots = ("GPTBot", "ClaudeBot", "anthropic-ai", "CCBot", "Google-Extended", "Applebot-Extended", "PerplexityBot",
+               "Bytespider", "meta-externalagent", "Amazonbot", "cohere-ai")
+    robots = "".join(f"User-agent: {b}\nDisallow: /\n\n" for b in ai_bots) if os.environ.get("ZK_AI_CRAWLERS", "") != "1" else ""
+    write_text(os.path.join(out_dir, "robots.txt"), robots + f"User-agent: *\nAllow: /\nSitemap: {site_url}sitemap.xml\n")
     write_text(os.path.join(out_dir, "sitemap.xml"),
                '<?xml version="1.0" encoding="UTF-8"?>\n'
                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
@@ -3527,7 +3605,11 @@ def write_site(out_dir, cache_dir, Bdata, G, meta, rows, args, now_y, nap=None, 
     html_path = os.path.join(out_dir, "index.html")
     write_text(html_path, page)
     write_text(os.path.join(out_dir, ".nojekyll"), "")
-    write_csv(os.path.join(out_dir, "meetbouten_analyse.csv"), rows, args, now_y)
+    csv_site = os.path.join(out_dir, "meetbouten_analyse.csv")
+    if os.environ.get("ZK_CSV_PUBLICEREN", "") == "1":
+        write_csv(csv_site, rows, args, now_y)
+    elif os.path.exists(csv_site):  # een kant-en-klaar bestand met alles maakt kopiëren te makkelijk
+        os.remove(csv_site)
     return html_path
 
 
@@ -3879,7 +3961,8 @@ def main():
         return
     size_mb = os.path.getsize(html_path) / 1e6
     log(f"Kaart:  {html_path}  ({size_mb:.1f} MB)")
-    log(f"Cijfers: {csv_path}")
+    if os.path.exists(csv_path):
+        log(f"Cijfers: {csv_path}")
     if not args.niet_openen:
         try:
             webbrowser.open("file://" + urllib.request.pathname2url(html_path))
@@ -4133,7 +4216,7 @@ pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;pa
     <h3>Privacy</h3>
     <p>Deze site gebruikt geen cookies en volgt geen bezoekers. We tellen alleen anoniem hoe vaak de kaart per dag wordt geopend, vanaf mobiel of computer, via welke soort bron (bijvoorbeeld een zoekmachine of een andere website) en hoe vaak er wordt gezocht en geklikt. Er worden daarbij geen IP-adressen of andere kenmerken van jou opgeslagen. Je kaartinstellingen worden alleen in je eigen browser bewaard. De site wordt gehost door GitHub, de achtergrondkaart komt van PDOK, een gezocht adres buiten de kaartgegevens wordt opgezocht bij de PDOK Locatieserver van de overheid, het bouwjaar van het pand op een aangeklikte plek wordt opgevraagd bij de BAG-dienst van PDOK, en &ldquo;Alle meetgegevens bekijken&rdquo; haalt gegevens op bij de gemeente of bij Rijkswaterstaat; die partijen zien daarbij, zoals bij elke website, je IP-adres. Feedback komt als e-mail binnen bij de beheerder; er wordt geen naam of e-mailadres gevraagd. De adressen bij de meetpunten komen uit de openbare gegevens van de gemeente en Rijkswaterstaat; vragen daarover gaan naar de bron (zie &ldquo;Vragen over de gegevens&rdquo;).</p>
     <h3>Bronnen</h3>
-    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. Bouwjaar en adressen per pand: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (publiek domein). NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). Broncode en rekenmethode: <a href="https://github.com/zakkingskaart/zakkingskaart.github.io" target="_blank" rel="noopener">GitHub</a>.</p>
+    <p>Meetbouten: Gemeente Amsterdam (api.data.amsterdam.nl). Achtergrondkaart: PDOK / Kadaster (CC BY 4.0). Adressen zoeken: PDOK Locatieserver. Bouwjaar en adressen per pand: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (publiek domein). NAP-peilmerken: Rijkswaterstaat (CC0). Bodembeweging: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); bevat aangepaste Copernicus Sentinel-data. Gemeentegrenzen (voor de pagina's per gemeente): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); buurtgrenzen Amsterdam: gemeente Amsterdam (CC0). Kaartbibliotheek: Leaflet (BSD-2). &copy; Zakkingskaart. Zie ook de <a href="voorwaarden/">gebruiksvoorwaarden en bronvermelding</a>.</p>
   </div></div>
 </div>
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">

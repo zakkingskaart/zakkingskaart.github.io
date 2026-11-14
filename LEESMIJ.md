@@ -83,7 +83,8 @@ Dit maakt in plaats van één groot bestand een kleine website in de map `site`:
 | `data.json` | alle meetbouten met hun cijfers |
 | `reeksen.json` | de meetreeksen voor de grafiekjes; wordt pas geladen nadat de kaart er staat |
 | `leaflet/` | de kaartbibliotheek, zelf gehost, zodat bezoekers geen verzoeken naar een extern CDN doen |
-| `meetbouten_analyse.csv` | alle cijfers per meetbout, als download |
+| `voorwaarden/` | gebruiksvoorwaarden, rechten en bronvermelding (ook `/en/voorwaarden/`); gelinkt in de voet van elke pagina en in "Over deze kaart" |
+| `meetbouten_analyse.csv` | alle cijfers per meetbout, als download. **Standaard niet meer gepubliceerd** (alleen met `ZK_CSV_PUBLICEREN=1`), zodat niemand met één klik de hele dataset meeneemt. Lokaal (zonder `--site`) wordt hij gewoon gemaakt. |
 | `.nojekyll` | zorgt dat GitHub Pages de bestanden ongewijzigd publiceert |
 
 De data blijft bewaard in de map `cache`, die bewust **buiten** `site` staat, zodat hij niet wordt gepubliceerd. Bij elke volgende run:
@@ -194,6 +195,19 @@ Bij elke bouw legt het script de satellietblokken naast de metingen met de hand 
 - **Vergelijking in de pop-up:** bij elke meetbout en elk peilmerk staat de mediaan van de andere meetpunten en van de bodem (satelliet) binnen 250 meter.
 - **Voorbeeldplaatje:** het script tekent elke week `deelbeeld.png` (1200 × 630), een kaart van Nederland met de gekleurde meetpunten. De kaart en alle pagina's verwijzen ernaar (`og:image`), zodat gedeelde links er verzorgd uitzien.
 - **Straatnamen op de buurtpagina's:** schrijfwijzen die alleen verschillen in hoofdletters, spaties, accenten of "1e"/"Eerste" worden samengevoegd. Omschrijvingen die geen straatnaam zijn (zoals "??Vervallen mei") staan onder "Overige meetbouten (adres niet eenduidig)". Spelfouten in de brondata blijven staan.
+
+## Bescherming: voorwaarden, AI-crawlers, licentie
+
+- **Gebruiksvoorwaarden** (`/voorwaarden/`): wat mag (bekijken, delen, een enkel kaartbeeld met bronvermelding), wat niet zonder
+  toestemming (automatisch binnenhalen, overnemen in een eigen dienst, AI-training), wie de rechten heeft (© Zakkingskaart:
+  auteursrecht op code, vormgeving en teksten, en waar van toepassing databankrecht op de samenstelling) en een tabel met alle
+  bronnen en hun licentie. De brongegevens zelf blijven onder hun eigen open licentie. De bronnenlijst staat in `BRONNEN` in het script.
+- **robots.txt** weert de bekende AI-crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended, PerplexityBot, Bytespider en andere).
+  Gewone zoekmachines blijven welkom. Wil je ze toch toelaten: variabele `ZK_AI_CRAWLERS=1`.
+- **LICENSE** in de repository: alle rechten voorbehouden. Zichtbare code is daarmee niet vrij te gebruiken.
+- De link "Broncode op GitHub" staat niet meer op de site.
+- Wat dit niet kan: wie de site echt wil kopiëren, kan dat technisch nog steeds. De voorwaarden geven je een juridische basis om
+  op te treden; de echte voorsprong zit in Pro (niet openbaar) en in het bijhouden.
 
 ## Vindbaar in Google
 
