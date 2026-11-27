@@ -1,0 +1,1374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Zakkingskaart: measured subsidence of buildings in the Netherlands</title>
+<meta name="description" content="Free map of measurements taken at buildings themselves: settlement bolts in Amsterdam, Rijkswaterstaat NAP benchmarks and satellite measurements across the Netherlands. Search your address and see how fast it is sinking. No estimate per postcode, no judgement.">
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'; form-action 'self'">
+<link rel="canonical" href="https://zakkingskaart.nl/en/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_GB">
+<meta property="og:title" content="Zakkingskaart">
+<meta property="og:description" content="Free map of measurements taken at buildings themselves: settlement bolts in Amsterdam, Rijkswaterstaat NAP benchmarks and satellite measurements across the Netherlands. Search your address and see how fast it is sinking.">
+<meta property="og:url" content="https://zakkingskaart.nl/en/">
+<link rel="alternate" hreflang="nl" href="https://zakkingskaart.nl/">
+<link rel="alternate" hreflang="en" href="https://zakkingskaart.nl/en/">
+<link rel="alternate" hreflang="x-default" href="https://zakkingskaart.nl/">
+<meta property="og:image" content="https://zakkingskaart.nl/deelbeeld.png?v=68f938002d">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Map of the Netherlands with coloured measuring points: how fast are they sinking?">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebSite", "name": "Zakkingskaart", "url": "https://zakkingskaart.nl/en/", "inLanguage": "en", "description": "Free map of measurements taken at buildings themselves: settlement bolts in Amsterdam, Rijkswaterstaat NAP benchmarks and satellite measurements across the Netherlands. Search your address and see how fast it is sinking.", "about": {"@type": "Thing", "name": "land subsidence"}, "hasPart": {"@type": "WebPage", "url": "https://zakkingskaart.nl/en/uitleg/", "name": "Explanation: what does Zakkingskaart show?"}}</script>
+<link rel="stylesheet" href="../leaflet/leaflet.css?v=1.9.4">
+<style>
+:root{--ink:#1c1c1a;--muted:#6b6a64;--panel:rgba(255,255,255,.96);--line:#e3e1d9;
+  --zgroot:#c8281c;--groot:#f07d38;--matig:#f2c230;--klein:#91cf60;--nihil:#1a9850;--stab:#1a9850;--oud:#9a9a9a;--ring:#08306b;--accent:#24507a}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font:13px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#eceae4}
+#map{position:absolute;inset:0}
+.panel{position:absolute;z-index:1000;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+#search{top:12px;left:58px;padding:7px;display:flex;gap:6px;width:min(380px,calc(100vw - 76px))}
+#sug{position:absolute;left:7px;right:7px;top:calc(100% - 2px);margin:0;padding:4px 0;list-style:none;background:#fff;border:1px solid var(--line);border-radius:0 0 9px 9px;box-shadow:0 8px 20px rgba(0,0,0,.15);max-height:min(60vh,340px);overflow:auto;z-index:1001}
+#sug li{padding:7px 11px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:14px;line-height:1.35}
+#sug li span{color:var(--muted);font-size:12px;white-space:nowrap}#sug li.act,#sug li:hover{background:#eef3f8}
+#search input{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff;color:var(--ink)}
+#search button,.btn{padding:7px 12px;border:0;border-radius:7px;background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+#search button:focus-visible,.btn:focus-visible,#legend button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#msg{position:absolute;top:58px;left:58px;z-index:1000;background:#fff3cd;border:1px solid #f0d58a;padding:6px 10px;border-radius:7px}
+#msg a{font-weight:600}
+#terug{position:absolute;top:58px;left:58px;z-index:1000;display:flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;font-size:14px}
+#terug[hidden]{display:none}
+#terug a{font-weight:600;text-decoration:none}
+#terug button{border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);padding:0 4px}
+body.terug #msg{top:96px}
+body.terug #rond{top:98px;max-height:calc(100% - 128px)}
+.pop .meer{margin:6px 0 0;font-size:13px}
+.pop .meer a,#rond .meer a{font-weight:600}
+#rond .meer{margin:8px 0 0;font-size:13px}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:1500;background:#fff;border-radius:14px 14px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.18);max-height:62vh;display:flex;flex-direction:column}
+#sheet[hidden]{display:none}
+#sheet .greep{width:40px;height:4px;border-radius:2px;background:#ccc;margin:8px auto 2px;flex:none}
+#sheet .dicht{position:absolute;top:4px;right:8px;border:0;background:none;font-size:26px;line-height:1;padding:4px 8px;color:var(--muted);cursor:pointer}
+#sheet .body{overflow:auto;padding:0 14px 16px;-webkit-overflow-scrolling:touch}
+#sheet .leaflet-popup{position:static!important;transform:none!important;left:auto!important;top:auto!important;bottom:auto!important;margin:0!important;opacity:1!important}
+#sheet .leaflet-popup-content-wrapper{box-shadow:none!important;border-radius:0!important;padding:0!important;background:none!important}
+#sheet .leaflet-popup-content{margin:4px 0 0!important;width:auto!important;max-width:none!important}
+#sheet .leaflet-popup-tip-container,#sheet .leaflet-popup-close-button{display:none!important}
+body.sheet .leaflet-control-attribution{display:none}
+#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2500;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;box-shadow:0 6px 20px rgba(0,0,0,.12);font-weight:600;max-width:calc(100vw - 32px);text-align:center}
+#loading.err{background:#fde8e6;color:#7a1c12;border-color:#e9a79f;font-weight:500}
+#loading[hidden]{display:none}
+#legend{top:12px;right:12px;width:300px;max-height:calc(100% - 90px);overflow:auto;padding:12px 14px}
+#legend .head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#legend h1{font-size:16px;margin:0;display:flex;align-items:center;gap:7px}
+#legend h1 .beeldmerk{flex:none;display:block}
+#taalLink{display:inline-flex;align-items:center;border:1px solid var(--line);background:#fff;border-radius:6px;height:26px;padding:0 8px;font-weight:600;color:var(--accent);text-decoration:none;white-space:nowrap}
+#taalLink:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#legend .toggle{border:1px solid var(--line);background:#fff;border-radius:6px;width:28px;height:26px;cursor:pointer;font:inherit}
+.rows{display:grid;gap:6px;margin:10px 0 6px}
+.row{display:grid;grid-template-columns:18px 22px 1fr auto;align-items:center;gap:6px;cursor:pointer}
+.row input{margin:0}
+.sw{display:inline-block;width:18px;height:6px;border-radius:3px}
+.sw.dot{width:11px;height:11px;border-radius:50%}
+.sw.stab{background:var(--stab);box-shadow:0 0 0 2px var(--ring)}
+.row .lbl{line-height:1.25}
+.row .lbl small{display:block;color:var(--muted)}
+.row .cnt{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+.note{color:var(--muted);font-size:12px;margin:6px 0}
+details{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+summary{cursor:pointer;font-weight:600}
+.set{display:grid;grid-template-columns:1fr 74px;gap:6px 8px;align-items:center;margin-top:8px}
+.set input[type=number]{width:74px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.chk{display:flex;gap:6px;align-items:center;margin-top:6px}
+.src{font-size:11px;color:var(--muted);margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.pop{min-width:240px}
+.pop .ttl{font-weight:700;font-size:14px}
+.pop .sub{color:var(--muted);font-size:12px;margin-bottom:6px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;margin:2px 0 6px}
+.pill i{width:10px;height:10px;border-radius:50%;display:inline-block}
+table.kv{border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+table.kv th{text-align:left;font-weight:500;color:var(--muted);padding:1px 10px 1px 0;white-space:nowrap}
+table.kv td{padding:1px 0}
+.m{color:var(--muted)}
+.list{max-height:220px;overflow:auto;margin-top:6px;border-top:1px solid var(--line)}
+.list table{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+.list td{padding:3px 4px;border-bottom:1px solid #f0eee8}
+.list tr{cursor:pointer}
+.list tr:hover{background:#f4f2ec}
+.list td.n{text-align:right;white-space:nowrap}
+.list .sw{width:9px;height:9px;border-radius:50%}
+.chart{display:block;margin-top:6px}
+a.raw{display:inline-block;margin-top:4px;font-size:12px;color:var(--accent)}
+.leaflet-popup-content{margin:12px 14px}
+#rond{top:60px;left:58px;width:min(380px,calc(100vw - 76px));padding:10px 12px;max-height:calc(100% - 90px);overflow:auto}
+#rond[hidden]{display:none}
+#rond .rt{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+#rond h2{font-size:14px;margin:0 0 2px;line-height:1.3}
+#rond .x{border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:var(--muted);padding:0 2px}
+#rond .rs{margin:8px 0 0}
+#rond .rs b{font-size:13px}
+#rond .rbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:#eee;margin:4px 0 2px}
+#rond .rbar i{display:block;height:100%}
+#rond .rk{font-size:12px;color:var(--muted)}
+.pop .pand,#rond .pand{margin:6px 0 0;font-size:13px}
+.pop .pand .m,#rond .pand .m{color:var(--muted);font-size:12px}
+.pop .omg{margin:6px 0 0;font-size:12px;color:#3b3a36;background:#f4f2ec;border-radius:6px;padding:5px 7px}
+@media (max-width:640px){
+  #rond{left:12px;width:calc(100vw - 24px);max-height:45%}
+  #legend{width:calc(100vw - 24px);top:auto;bottom:24px;max-height:55%}
+  #legend.collapsed .body{display:none}
+}
+#legend.collapsed .body{display:none}
+#modal,#fbModal,#aboutModal{position:fixed;inset:0;z-index:4000;background:rgba(20,20,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+#modal[hidden],#fbModal[hidden],#aboutModal[hidden]{display:none}
+#intro{position:fixed;inset:0;z-index:4500;background:rgba(20,20,18,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+#intro[hidden]{display:none}
+#aboutModal{z-index:4600}
+#intro .mbox{max-width:520px}
+#intro .ibody{padding:4px 22px 20px;overflow:auto}
+#intro ul{margin:6px 0 14px;padding-left:20px}
+#intro li{margin:0 0 9px;line-height:1.45}
+#intro .iakk{margin:0 0 14px;line-height:1.45}
+#intro .iact{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#intro button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+#intro a{color:var(--accent)}
+.pop .disc{margin:6px 0 0;font-size:11.5px;color:#77746c}
+.pop .disc a{color:inherit}
+#legend .indep{margin:4px 0 0;font-size:12px;color:var(--muted)}
+#legend .indep a,#aboutModal a{color:var(--accent)}
+#aBody ul{margin:4px 0 10px;padding-left:20px}
+#aBody li{margin:0 0 6px}
+#aboutModal .mbox{max-width:640px}
+#aBody{overflow:auto;padding:4px 18px 18px;font-size:13.5px;line-height:1.55}
+#aBody h3{font-size:14px;margin:16px 0 4px}
+#aBody p{margin:0 0 8px}
+#aClose{border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;line-height:1;cursor:pointer;flex:none}
+#fbBtn{border:1px solid var(--line);background:#fff;border-radius:6px;height:26px;padding:0 9px;cursor:pointer;font:inherit;font-weight:600;color:var(--accent);white-space:nowrap}
+#fbBtn:focus-visible,#fbModal button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#legend .head .btns{display:flex;gap:6px;align-items:center}
+#fbModal .mbox{max-width:460px}
+.stars{display:flex;gap:4px;margin:4px 0 12px;border:0;padding:0}
+.stars legend{font-weight:600;margin-bottom:6px;padding:0}
+.stars input{position:absolute;opacity:0;width:1px;height:1px}
+.stars label{font-size:30px;line-height:1;color:#cfccc2;cursor:pointer;padding:0 2px}
+.stars label.on{color:#e6a700}
+.stars input:focus-visible+label{outline:2px solid var(--ink);border-radius:4px}
+.fbf label.t{display:block;font-weight:600;margin:10px 0 4px}
+.fbf textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.fbf textarea{min-height:64px;resize:vertical}
+.fbf .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.fbf .row2{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
+.fbf .cnt2{color:var(--muted);font-size:12px}
+#fbStatus{margin-top:10px;font-size:13px}
+#fbStatus.ok{color:#11733a} #fbStatus.err{color:#a3261a}
+.mbox{background:#fff;border-radius:12px;width:100%;max-width:980px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.mhead h2{margin:0;font-size:17px}
+#mClose{border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;line-height:1;cursor:pointer;flex:none}
+#mBody{overflow:auto;padding:14px 18px 18px}
+#mBody h3{font-size:14px;margin:18px 0 6px}
+.mt-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table.mt{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+table.mt th{position:sticky;top:0;background:#f6f5f1;text-align:left;font-weight:600;padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.mt td{padding:6px 9px;border-bottom:1px solid #f0eee8;white-space:nowrap}
+table.mt td.n,table.mt th.n{text-align:right}
+table.mt tr.rec td{background:#fbf6e6}
+table.mt tr.oud td{color:#9a978f}
+.mnote{color:var(--muted);font-size:12px;margin:6px 0 0}
+.msum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin:0 0 10px}
+.msum b{font-variant-numeric:tabular-nums}
+pre.rawjson{background:#f6f5f1;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;max-height:45vh;overflow:auto;white-space:pre;margin:0}
+.warn{background:#fff3cd;border:1px solid #f0d58a;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px}
+.naprow{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+.naprow[hidden]{display:none}
+.sw.ring{width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 2.5px var(--accent)}
+#napnote{margin:4px 0 0}
+#napnote:empty{display:none}
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Map with settlement bolts and NAP benchmarks"></div>
+<noscript><div style="position:relative;z-index:2000;max-width:640px;margin:90px auto 0;padding:16px 18px;background:#fff;border-radius:10px;font:16px/1.5 system-ui,sans-serif"><p style="margin:0 0 8px">Zakkingskaart is a visualisation of existing public measurements of subsidence in the Netherlands (settlement bolts, NAP benchmarks and satellite measurements), classified according to an existing standard. The map needs JavaScript.</p><p style="margin:0"><a href="uitleg/">What does the map show?</a> · <a href="gemeenten/">Figures by municipality and neighbourhood</a></p></div></noscript>
+<form id="search" class="panel" autocomplete="off">
+  <input id="q" role="combobox" aria-autocomplete="list" aria-controls="sug" aria-expanded="false" placeholder="Search an address, street or place in the Netherlands" aria-label="Search">
+  <button type="submit">Search</button>
+  <ul id="sug" role="listbox" aria-label="Suggestions" hidden></ul>
+</form>
+<div id="msg" hidden></div>
+<div id="terug" class="panel" hidden></div>
+<div id="sheet" hidden role="dialog" aria-label="Details"><button type="button" class="dicht" aria-label="Close">×</button><div class="greep"></div><div class="body"></div></div>
+<div id="rond" class="panel" hidden role="region" aria-label="Measuring points around the searched address"></div>
+<div id="loading" role="status" aria-live="polite" hidden>Loading map data …</div>
+<div id="fbModal" hidden role="dialog" aria-modal="true" aria-labelledby="fbTitle">
+  <div class="mbox"><div class="mhead"><div><h2 id="fbTitle">What do you think of this map?</h2><div class="sub">Your feedback helps improve the map.</div></div><button id="fbClose" class="xbtn" type="button" aria-label="Close" style="border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;cursor:pointer">&times;</button></div>
+  <div id="fbBody" style="padding:14px 18px 18px">
+    <form class="fbf" id="fbForm" novalidate>
+      <fieldset class="stars" id="fbStars"><legend>Your rating</legend></fieldset>
+      <label class="t" for="fbMsg">Comment <span class="m">(optional)</span></label>
+      <textarea id="fbMsg" rows="3" maxlength="280" placeholder="What do you like, or what could be better?"></textarea>
+      <div class="hp" aria-hidden="true"><label for="fbHp">Leave this field empty</label><input id="fbHp" type="text" tabindex="-1" autocomplete="off"></div>
+      <p class="mnote">We do not ask for a name or email address. Your rating and comment arrive as an email to the maintainer of this map, so please do not include personal details. The map uses no cookies and no tracking.</p>
+      <div class="row2"><span class="cnt2" id="fbCnt">0 / 280</span><button class="btn" id="fbSend" type="submit">Send</button></div>
+      <div id="fbStatus" role="status" aria-live="polite"></div>
+    </form>
+  </div></div>
+</div>
+<div id="intro" hidden role="dialog" aria-modal="true" aria-labelledby="iTitle">
+  <div class="mbox"><div class="mhead"><div><h2 id="iTitle">Before you open the map</h2><div class="sub">Independent hobby project, not by the municipality or Rijkswaterstaat</div></div></div>
+  <div class="ibody"><ul>
+    <li>Zakkingskaart is a visualisation of existing public measurements by the City of Amsterdam, Rijkswaterstaat and the European Union, classified according to an existing standard (the KCAF guideline). The map converts the measurements into how fast a measuring point is sinking. Nothing more: <b>no judgement or advice</b> about buildings, the ground or their value, and no foundation label.</li>
+    <li>A measuring point sits in one façade or structure and does not tell you everything about its surroundings. Measurements can be old, incomplete or wrong.</li>
+    <li>Questions or reports about the data, or is something wrong? Please contact the source: the City of Amsterdam, Rijkswaterstaat or Copernicus. Whatever they correct appears on this map automatically.</li>
+  </ul>
+  <p class="iakk">By continuing, you agree that you use this map as it is, and that <b>no rights can be derived from it</b>.</p>
+  <div class="iact"><span><a href="#over" id="iMore">About &amp; disclaimer</a> · <a href="../" hreflang="nl" lang="nl">Nederlands</a></span><button id="iOk" type="button">I agree, go to the map</button></div></div></div>
+</div>
+<div id="aboutModal" hidden role="dialog" aria-modal="true" aria-labelledby="aTitle">
+  <div class="mbox"><div class="mhead"><div><h2 id="aTitle">About this map</h2></div><button id="aClose" type="button" aria-label="Close">&times;</button></div>
+  <div id="aBody">
+    <h3>Independent initiative</h3>
+    <p>Zakkingskaart (Dutch for &ldquo;subsidence map&rdquo;) is an independent, non-commercial initiative. It is not a website of a municipality or of Rijkswaterstaat and is not made, checked or approved by them. This English version is a translation; in case of differences, the Dutch text prevails.</p>
+    <h3>What the map shows</h3>
+    <p>The map shows how fast buildings and the ground in the Netherlands are sinking. It uses three public sources: the benchmarks of Rijkswaterstaat, the Dutch national public works agency (whole country), the settlement bolts of the City of Amsterdam (many more measuring points, Amsterdam only) and satellite measurements of the European Union (whole country). These are measurements, not estimates: where nothing has been measured, the map shows nothing. There is no model that calculates a risk per postcode or per neighbourhood. More explanation: <a href="uitleg/">what does the map show?</a></p>
+    <h3>Terms</h3>
+    <ul>
+      <li><b>mm per year:</b> how many millimetres a point moves down each year. 1 mm per year is 1 centimetre in 10 years.</li>
+      <li><b>Settlement bolt (meetbout):</b> a small bolt in the façade of a building. The City of Amsterdam regularly measures its height.</li>
+      <li><b>Benchmark (peilmerk):</b> a small metal bolt in a building or bridge whose height Rijkswaterstaat measures once every 5 to 15 years. The height is measured relative to NAP (Normaal Amsterdams Peil, Amsterdam Ordnance Datum), the standard height reference of the Netherlands.</li>
+      <li><b>Satellite measurement:</b> satellites use radar to measure the height of ground, streets and buildings together, per block of 100 by 100 metres.</li>
+      <li><b>Median (or typically):</b> the middle value of a group of measuring points: half sink faster, half slower. That way a single outlier does not determine the picture.</li>
+      <li><b>Year of construction and addresses:</b> from the BAG, the national register of buildings and addresses. For very old buildings the year of construction is sometimes an estimate. The number of addresses shows, for example, whether a building is an apartment block.</li>
+      <li><b>Recent years:</b> the rate calculated from the latest measurement and a measurement at least 4 years earlier (at least 8 years for benchmarks).</li>
+    </ul>
+    <h3>Amsterdam: settlement bolts</h3>
+    <p>In Amsterdam the map uses the city's public settlement bolt data and is updated automatically every week. Settlement bolts are measuring points in façades whose height the city measures periodically. For each bolt the map shows how fast it has sunk in recent years (the recent rate), whether the sinking has clearly slowed down (&ldquo;stabilised&rdquo;) and whether there are recent measurements. The city's own map colours by the average rate since the first measurement, so the colours can differ.</p>
+    <h3>Whole country: Rijkswaterstaat benchmarks</h3>
+    <p>A benchmark (officially: NAP benchmark, peilmerk) is a small metal bolt in a house, bridge or other structure whose height Rijkswaterstaat measures once every 5 to 15 years. The map shows for each benchmark how fast it has sunk in recent years, with the same colours as the settlement bolts, but as an open circle. Zoomed out you see squares with the median of the benchmarks inside them. There are far fewer benchmarks than settlement bolts: usually a few per neighbourhood. A benchmark moves with the ground of the whole area; it says something about the place, not necessarily about that one building. Benchmarks that have not been measured for more than 20 years, or whose measurements show an unexplained jump, are grey.</p>
+    <h3>Whole country: subsidence measured from space</h3>
+    <p>The layer &ldquo;Subsidence measured from space&rdquo; comes from Copernicus, the Earth observation programme of the European Union (the service is called the European Ground Motion Service, EGMS). Every few days, satellites use radar to measure the height of ground, streets and buildings. From this, for each block of 100 by 100 metres, it has been calculated how much the ground sank or rose per year over a period of five years. Zoomed out you see the median per block of about 5 or 1 kilometres. You only see blocks where something reflects the radar signal well, such as roofs, roads and bridges; nothing is measured in meadows, fields or on water. Unlike a settlement bolt or benchmark, a block does not measure one building but everything together: a house on piles can stand still while the street in front of it sinks, and vice versa. The colours follow the same classification as the measuring points, but that classification was written for buildings. In its foundation policy, the City of Amsterdam uses satellite data only to see whether a building is sinking more than 3 mm per year. Blocks with an uncertain measurement are grey. The layer is off by default.</p>
+    <h3>What the colours mean</h3>
+    <p>The colour depends only on how fast a measuring point has sunk in recent years, in five classes: <b>negligible</b> (less than 0.5 mm per year, or rising), <b>small</b> (0.5 to 2), <b>moderate</b> (2 to 3), <b>large</b> (3 to 4) and <b>very large</b> (4 mm per year or more). These names and limits come from the Dutch national guideline for foundation investigations by the Kennis Centrum Aanpak Funderingsproblematiek (KCAF, <i>Richtlijn Funderingen onder gebouwen</i>, table 3); the City of Amsterdam uses the same classification in its policy rules on existing foundations (2021). A rate exactly on a limit belongs to the higher class. Stabilised: first at least 1.5 and now less than 0.5 mm per year. Grey: no recent or too few measurements. The guideline was written for measurements on buildings; the map also uses it for benchmarks and satellite blocks. The class only describes the measured rate: it says nothing about the condition of the foundation, which can only be established by a foundation investigation.</p>
+    <h3>No foundation label</h3>
+    <p>Since 1 April 2026, the valuation of a home in the Netherlands includes a foundation risk in classes A to E, based on data from KCAF. Zakkingskaart does not give such a label and does not estimate any risk. The classes on this map (negligible to very large) only describe how fast a measuring point is sinking; they are not the letters A to E.</p>
+    <h3>Disclaimer</h3>
+    <p>This map shows public measurement data from the City of Amsterdam and Rijkswaterstaat in a simpler way and converts it into a rate. In doing so it may differ from how the source presents the data. The map gives no judgement or advice about buildings, the ground or their value, and may be incomplete or out of date. The condition of a building's foundation can only be established by a foundation investigation. Zakkingskaart is not a government body and is not part of the municipality, Rijkswaterstaat, KCAF or Copernicus. The map is made with care, but without any guarantee. Anyone who uses the map does so at their own risk; no rights can be derived from the map and the maintainer is not liable for any consequences of its use, to the extent permitted by law. This English version is a translation; in case of differences, the Dutch text prevails.</p>
+    <h3>Questions about the data</h3>
+    <p>This site does not manage the measurement data and cannot change it. Do you have a question about a measurement, or do you think something is wrong? Please contact the source:</p>
+    <ul>
+      <li><b>Settlement bolts (Amsterdam):</b> City of Amsterdam, Basisinformatie, <a href="mailto:gebruik.basisinformatie@amsterdam.nl">gebruik.basisinformatie@amsterdam.nl</a> (contact address for the dataset <a href="https://data.overheid.nl/dataset/m6avdgklu2czqa" target="_blank" rel="noopener">Kernregistratie Meetbouten</a>).</li>
+      <li><b>Benchmarks:</b> Rijkswaterstaat, <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">Servicedesk Data contact form</a> (in Dutch).</li>
+      <li><b>Subsidence measured from space:</b> Copernicus Land Monitoring Service, <a href="https://land.copernicus.eu/en/contact-service-helpdesk" target="_blank" rel="noopener">Service desk</a>.</li>
+    </ul>
+    <p>Whatever the source corrects or removes also disappears from this map at the next automatic update. The &ldquo;Feedback&rdquo; button is for comments about the website itself.</p>
+    <h3>Privacy</h3>
+    <p>This site uses no cookies and does not track visitors. We only count anonymously how often the map is opened per day, from a phone or a computer, via which kind of source (for example a search engine or another website) and how often people search and click. No IP addresses or other characteristics of you are stored. Your map settings are only kept in your own browser. The site is hosted by GitHub, the background map comes from PDOK, an address you search for outside the map data is looked up at the government's PDOK Locatieserver, the year of construction of the building at a clicked spot is requested from PDOK's BAG service, and &ldquo;View all measurement data&rdquo; fetches data from the City of Amsterdam or from Rijkswaterstaat; as with any website, those parties see your IP address. Feedback arrives as an email to the maintainer; no name or email address is asked for. The addresses at the measuring points come from the public data of the city and Rijkswaterstaat; questions about them go to the source (see &ldquo;Questions about the data&rdquo;).</p>
+    <h3>Sources</h3>
+    <p>Settlement bolts: City of Amsterdam (api.data.amsterdam.nl). Background map: PDOK / Kadaster (CC BY 4.0). Address search: PDOK Locatieserver. Year of construction and addresses per building: Basisregistratie Adressen en Gebouwen (BAG), Kadaster via PDOK (public domain). NAP benchmarks: Rijkswaterstaat (CC0). Ground motion: Copernicus Land Monitoring Service, European Ground Motion Service (EGMS); contains modified Copernicus Sentinel data. Municipal boundaries (for the pages per municipality): Kadaster, Bestuurlijke Gebieden (CC BY 4.0); neighbourhood boundaries Amsterdam: City of Amsterdam (CC0). Classification of the rate of subsidence: KCAF, Richtlijn Funderingen onder gebouwen (table 3); City of Amsterdam, Beleidsregels over het onderzoek en handhaving van de voorschriften over bestaande funderingen (2021). Map library: Leaflet (BSD-2). &copy; Zakkingskaart. See also the <a href="voorwaarden/">terms of use and attribution</a>.</p>
+  </div></div>
+</div>
+<div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <div class="mbox"><div class="mhead"><div><h2 id="mTitle"></h2><div class="sub" id="mSub"></div></div><button id="mClose" type="button" aria-label="Close">&times;</button></div>
+  <div id="mBody"></div></div>
+</div>
+<aside id="legend" class="panel">
+  <div class="head"><h1><svg class="beeldmerk" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#24507a"/><path d="M8 15.5 16 8.5l8 7V23H8z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><path d="M16 13.2v6.3m-2.6-2.5 2.6 2.6 2.6-2.6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Zakkingskaart</h1><div class="btns"><a href="../" id="taalLink" hreflang="nl" lang="nl" title="Nederlandse versie" aria-label="Nederlandse versie">NL</a><button id="fbBtn" type="button" hidden>&#9733; Feedback</button><button class="toggle" id="toggle" aria-expanded="true" title="Expand or collapse">–</button></div></div>
+  <p class="indep">Independent initiative, separate from the municipality and Rijkswaterstaat · <a href="#over" id="aboutLink">About &amp; disclaimer</a> · <a href="uitleg/">Explanation</a> · <a href="gemeenten/">Figures by municipality and neighbourhood</a> · <a href="betrouwbaarheid/">How accurate is the satellite?</a></p>
+  <div class="body">
+    <div class="rows" id="rows"></div>
+    <p class="note" id="klnote">Classification from the Dutch national guideline for foundation investigations (KCAF), also used by the City of Amsterdam. It only says how fast a point is sinking: no judgement about the foundation and no foundation label.</p>
+    <p class="note" id="viewnote">The numbers count the settlement bolts you can currently see on the map.</p>
+    <p class="note"><b>Amsterdam:</b> a dot is one settlement bolt in a façade; a line is a stretch of street (the median of the bolts there).</p>
+    <p class="note"><b>Whole country:</b> open circles are Rijkswaterstaat benchmarks. Click anything for details.</p>
+    <p class="note"><b>Nearby:</b> search an address, or right-click (on a phone: long-press) anywhere on the map.</p>
+    <div class="naprow" id="boutrow">
+      <label class="row"><input type="checkbox" id="cBout"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#91cf60,#f2c230,#f07d38,#c8281c);border-radius:2px;height:4px"></i><span class="lbl">Settlement bolts (Amsterdam)<small>City measuring points in building façades</small></span><span class="cnt" id="cnt-bout">–</span></label>
+    </div>
+    <div class="naprow" id="naprow" hidden>
+      <label class="row"><input type="checkbox" id="cNap"><i class="sw ring"></i><span class="lbl">Benchmarks (whole country)<small>Rijkswaterstaat measuring points in buildings and bridges · measured once every 5 to 15 years</small></span><span class="cnt" id="cnt-nap">–</span></label>
+      <p class="note" id="napnote"></p>
+    </div>
+    <div class="naprow" id="egrow" hidden>
+      <label class="row"><input type="checkbox" id="cEgms"><i class="sw" style="background:linear-gradient(90deg,#1a9850,#91cf60,#f2c230,#f07d38,#c8281c);opacity:.6;border-radius:2px"></i><span class="lbl">Subsidence measured from space<small>EU satellite measurements · per block of 100 × 100 m · ground, streets and buildings together</small></span></label>
+      <p class="note" id="egnote"></p>
+    </div>
+    <details id="settings">
+      <summary>Settings</summary>
+      <div class="set">
+        <label for="sStabE">Stabilised: earlier at least (mm/year)</label><input id="sStabE" type="number" step="0.1" min="0">
+        <label for="sStabN">... and now less than (mm/year)</label><input id="sStabN" type="number" step="0.1" min="0">
+        <label for="sStale">Latest measurement at most (years old)</label><input id="sStale" type="number" step="1" min="1">
+      </div>
+      <label class="chk"><input id="cStale" type="checkbox"> Colour older measurements anyway</label>
+      <label class="chk"><input id="cDots" type="checkbox"> Show individual settlement bolts</label>
+      <p class="note"><button class="btn" id="reset" type="button">Restore defaults</button></p>
+    </details>
+    <div class="src" id="src"></div>
+  </div>
+</aside>
+<script src="../leaflet/leaflet.js?v=1.9.4"></script>
+<script>
+(function(){var f=window.fetch;if(!f)return;window.fetch=function(u,o){if(typeof u==="string"&&!/^([a-z][a-z0-9+.-]*:|\/|\.\.\/)/i.test(u))u="../"+u;return f.call(window,u,o);};})();
+window.__showErr=function(t){var d=document.getElementById("err");if(!d){d=document.createElement("div");d.id="err";
+d.style.cssText="position:absolute;left:12px;right:12px;bottom:40px;z-index:3000;background:#fde8e6;color:#7a1c12;border:1px solid #e9a79f;border-radius:8px;padding:10px 12px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;max-height:40%;overflow:auto";
+document.body.appendChild(d);d.textContent="Something went wrong while drawing the map. Please pass on this message:\n\n";}d.textContent+=t+"\n";};
+// taalkeuze: neem de plek op de kaart mee (?kaart=, ?punt=) naar de andere taal
+(function(){var t=document.getElementById("taalLink");if(t)t.addEventListener("click",function(){t.href=t.getAttribute("href").split("?")[0]+location.search;});})();
+window.addEventListener("error",function(e){window.__showErr((e.message||"error")+" (line "+e.lineno+":"+e.colno+")");});
+// "Over & disclaimer": werkt los van de kaart, ook als de data niet laadt. Deelbaar als #over.
+(function(){var m=document.getElementById("aboutModal"),prev=null;
+function open(e){if(e)e.preventDefault();prev=document.activeElement;m.hidden=false;document.getElementById("aClose").focus();}
+function close(){m.hidden=true;if(location.hash==="#over"&&history.replaceState)history.replaceState(null,"",location.pathname+location.search);if(prev&&prev.focus)prev.focus();}
+document.getElementById("aboutLink").addEventListener("click",open);
+document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href="#over"]');if(a&&a.id!=="aboutLink")open(e);});
+document.getElementById("aClose").addEventListener("click",close);
+m.addEventListener("click",function(e){if(e.target===m)close();});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!m.hidden)close();});
+if(location.hash==="#over")open();
+window.addEventListener("hashchange",function(){if(location.hash==="#over"&&m.hidden)open();});
+// Akkoord bij het openen: geldig voor 30 dagen in deze browser (localStorage, geen cookie).
+// Verhoog iv als de tekst inhoudelijk verandert; dan ziet iedereen hem opnieuw.
+var IK="zakkingskaart.intro",iv="3",GELDIG=30*864e5,it=document.getElementById("intro"),gezien=false;
+try{var a=JSON.parse(localStorage.getItem(IK)||"null");gezien=!!a&&a.v===iv&&typeof a.t==="number"&&Date.now()-a.t>=0&&Date.now()-a.t<GELDIG;}catch(e){}
+if(!gezien&&location.hash!=="#over"){it.hidden=false;setTimeout(function(){var b=document.getElementById("iOk");if(b)b.focus();},0);}
+document.getElementById("iOk").addEventListener("click",function(){it.hidden=true;try{localStorage.setItem(IK,JSON.stringify({v:iv,t:Date.now()}));}catch(e){}});
+})();
+</script>
+<script>
+function zkStart(D){
+"use strict";
+try{
+if(typeof L==="undefined"){document.body.insertAdjacentHTML("beforeend",'<p style="position:absolute;top:80px;left:20px;z-index:2000;background:#fff;padding:12px;border-radius:8px">The map library could not be loaded. Check your internet connection and open the page again.</p>');return;}
+const B=D.b,G=D.g,M=D.meta;
+let serState="ok",curPop=null;   // meetreeksen: "ok" | "laden" | "fout"
+
+// ---------- anonieme teller ----------
+// Meldt alleen: kaart geopend, mobiel/desktop, herkomst, en hoe vaak er is gezocht en geklikt.
+// Geen cookies en geen kenmerken per bezoeker. Alleen wie zelf ?niettellen=1 opent, krijgt een
+// vlag in de eigen browser waardoor die browser niet meer meetelt (?niettellen=0 zet hem terug).
+const TEL=(function(){
+  const url=(M.statsUrl||"").trim(),geen={tel(){}};
+  try{const q=new URLSearchParams(location.search).get("niettellen");
+    if(q==="1")localStorage.setItem("zakkingskaart.niettellen","1");
+    else if(q==="0")localStorage.removeItem("zakkingskaart.niettellen");
+    if(q==="1"||q==="0")setTimeout(()=>{const m=document.getElementById("msg");if(!m)return;
+      m.textContent=q==="1"?"This browser is no longer counted in the visitor statistics.":"This browser is counted in the visitor statistics again.";
+      m.hidden=false;setTimeout(()=>{m.hidden=true;},6000);},400);
+    if(localStorage.getItem("zakkingskaart.niettellen")==="1")return geen;}catch(e){}
+  if(!/^https:\/\//i.test(url))return geen;
+  if(/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname)||location.protocol==="file:")return geen;
+  if(navigator.webdriver||/bot|crawl|spider|slurp|preview|lighthouse/i.test(navigator.userAgent||""))return geen;
+  const ev={zoek:0,punt:0,meet:0};
+  function send(o){try{const body=JSON.stringify(Object.assign({soort:"stat"},o));
+    if(navigator.sendBeacon&&navigator.sendBeacon(url,new Blob([body],{type:"text/plain;charset=utf-8"})))return;
+    fetch(url,{method:"POST",mode:"no-cors",keepalive:true,headers:{"Content-Type":"text/plain;charset=utf-8"},body:body}).catch(()=>{});}catch(e){}}
+  let bron="direct";
+  try{const r=document.referrer?new URL(document.referrer).hostname.replace(/^www\./,"").toLowerCase():"";
+    const eigen=location.hostname.replace(/^www\./,"").toLowerCase();
+    if(!r)bron="direct";
+    else if(r===eigen||r==="zakkingskaart.github.io"||r==="zakkingskaart.nl")bron="intern";
+    else if(/(^|\.)google\./.test(r))bron="google";
+    else if(/(^|\.)(bing|duckduckgo|ecosia|yahoo|startpage|qwant|search\.brave)\./.test(r))bron="zoekmachine";
+    else if(/(^|\.)(facebook|instagram|twitter|x|t|linkedin|reddit|whatsapp|threads|bsky|mastodon|tiktok)\.(com|co|app|net|social|nl)$/.test(r)||/^(lm|l|m)\.facebook\.com$/.test(r))bron="social";
+    else bron="site:"+r;}catch(e){}
+  send({bezoek:1,apparaat:matchMedia("(max-width:640px)").matches?"mobiel":"desktop",bron:bron});
+  function flush(){if(ev.zoek||ev.punt||ev.meet){send({zoek:ev.zoek,punt:ev.punt,meet:ev.meet});ev.zoek=ev.punt=ev.meet=0;}}
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flush();});
+  window.addEventListener("pagehide",flush);
+  return {tel(k){if(k in ev)ev[k]++;}};
+})();
+const I={id:0,lat:1,lon:2,addr:3,street:4,blk:5,status:6,n:7,first:8,last:9,lastY:10,recent:11,rfrom:12,early:13,efrom:14,total:15,cum:16,ser:17};
+const KL=["zgroot","groot","matig","klein","nihil","stab","oud"];
+const COL={zgroot:"#c8281c",groot:"#f07d38",matig:"#f2c230",klein:"#91cf60",nihil:"#1a9850",stab:"#1a9850",oud:"#9a9a9a"};
+// indeling KCAF-richtlijn tabel 3 = gemeente Amsterdam; niet instelbaar
+const GRENZEN=M.grenzen||[[4,"zgroot"],[3,"groot"],[2,"matig"],[0.5,"klein"]];
+function snelKl(v){for(const g of GRENZEN)if(v>=g[0])return g[1];return"nihil";}
+const RING="#08306b";
+const DEF={stabEarly:M.defaults.stabEarly,stabNow:M.defaults.stabNow,
+  staleYears:M.defaults.staleYears,colorStale:false,showDots:true,show:{zgroot:true,groot:true,matig:true,klein:true,nihil:true,stab:true,oud:true},base:"pdokgrijs",showNap:true,showEgms:false,showBout:true};
+let S=JSON.parse(JSON.stringify(DEF));
+try{const nieuw=localStorage.getItem("zakkingskaart.v2");const s=JSON.parse(nieuw||localStorage.getItem("zakkingskaart.v1")||"null");
+  if(s){delete s.red;delete s.yellow;if(!nieuw)delete s.show;S=Object.assign(S,s);S.show=Object.assign({},DEF.show,s.show||{});if(!s.napKeuze)S.showNap=DEF.showNap;}}catch(e){}
+function save(){try{localStorage.setItem("zakkingskaart.v2",JSON.stringify(S));localStorage.removeItem("zakkingskaart.v1");}catch(e){}}
+
+const nf=(v,d=2)=>v==null?"–":Number(v).toLocaleString("en-GB",{minimumFractionDigits:d,maximumFractionDigits:d});
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// "Niet tonen?": naar het formulier op de uitlegpagina, met het meetpunt al ingevuld (alleen als de bezwaar-dienst is ingesteld)
+function ntLink(id,adres){if(!M.bezwaarUrl)return"";return' · <a href="uitleg/?punt='+encodeURIComponent(id)+(adres?'&amp;adres='+encodeURIComponent(adres):'')+'#niet-tonen" target="_blank" rel="noopener">Hide?</a>';}
+const fmtDate=iso=>iso?iso.slice(8,10)+"-"+iso.slice(5,7)+"-"+iso.slice(0,4):"–";
+function median(a){const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function label(c){
+  if(c==="zgroot")return["Very large subsidence","4 mm/year or more"];
+  if(c==="groot")return["Large subsidence","3 to 4 mm/year"];
+  if(c==="matig")return["Moderate subsidence","2 to 3 mm/year"];
+  if(c==="klein")return["Small subsidence","0.5 to 2 mm/year"];
+  if(c==="nihil")return["Negligible subsidence","less than 0.5 mm/year or rising"];
+  if(c==="stab")return["Stabilised","first 1.5 mm/year or more, now less than 0.5"];
+  return["No recent measurements","latest measurement older than "+S.staleYears+" years, too few measurements or point discontinued"];
+}
+function cls(b){
+  const r=b[I.recent];
+  if(r==null)return"oud";
+  const stale=(M.nowYear-b[I.lastY])>S.staleYears||/verval/i.test(b[I.status]||"");
+  if(stale&&!S.colorStale)return"oud";
+  const e=b[I.early];
+  if(e!=null&&e>=S.stabEarly&&r<S.stabNow)return"stab";
+  return snelKl(r);
+}
+
+// ---------- kaart ----------
+const map=L.map("map",{preferCanvas:true,zoomSnap:0.5,minZoom:7}).setView([52.36,4.9],13);
+window.zkKaart={centrum:()=>map.getCenter(),zoom:()=>map.getZoom()};  // alleen-lezen, voor tests
+const rend=L.canvas({padding:0.4,tolerance:6});
+const PDOK="https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/";
+const pdokOpt={maxNativeZoom:19,maxZoom:21,attribution:"Background: <a href=\"https://www.pdok.nl\" target=\"_blank\" rel=\"noopener\">PDOK</a> / Kadaster (BRT)"};
+const bases={
+  pdokgrijs:L.tileLayer(PDOK+"grijs/EPSG:3857/{z}/{x}/{y}.png",pdokOpt),
+  pdokpastel:L.tileLayer(PDOK+"pastel/EPSG:3857/{z}/{x}/{y}.png",pdokOpt),
+  pdokstandaard:L.tileLayer(PDOK+"standaard/EPSG:3857/{z}/{x}/{y}.png",pdokOpt),
+  luchtfoto:L.tileLayer("https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_orthoHR/EPSG:3857/{z}/{x}/{y}.jpeg",{maxNativeZoom:19,maxZoom:21,attribution:"Aerial photo: PDOK / Beeldmateriaal Nederland"}),
+  geen:L.layerGroup()
+};
+(bases[S.base]||bases.pdokgrijs).addTo(map);
+L.control.layers({"Grey (PDOK)":bases.pdokgrijs,"Pastel (PDOK)":bases.pdokpastel,"Standard (PDOK)":bases.pdokstandaard,"Aerial photo (PDOK)":bases.luchtfoto,"No background":bases.geen},null,{position:"bottomleft"}).addTo(map);
+map.on("baselayerchange",e=>{for(const k in bases)if(bases[k]===e.layer)S.base=k;save();});
+// Laadt de achtergrond niet? Dan een melding; de meetbouten werken ook zonder achtergrond.
+for(const k in bases){const t=bases[k];if(!t.on||k==="geen")continue;let ok=0,bad=0,shown=false;
+  t.on("tileload",()=>ok++);
+  t.on("tileerror",()=>{bad++;if(!shown&&bad>=6&&ok===0){shown=true;const el=document.getElementById("msg");
+    el.textContent="The background map is not loading. Choose another background at the bottom left; the measuring points also work without one.";el.hidden=false;setTimeout(()=>el.hidden=true,8000);}});}
+L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
+map.attributionControl.addAttribution("Settlement bolts: City of Amsterdam"+(M.napUrl?" · Benchmarks: Rijkswaterstaat":"")+(M.egmsUrl?" · Satellite: Copernicus (EU)":"")+" · No judgement or advice");
+
+const lineLayer=L.layerGroup().addTo(map), dotLayer=L.layerGroup().addTo(map);
+const inLine=new Uint8Array(B.length);
+const lines=[];
+G.forEach((g,gi)=>g[2].forEach(seg=>{
+  if(seg.length<2)return;
+  seg.forEach(i=>inLine[i]=1);
+  const pl=L.polyline(seg.map(i=>[B[i][I.lat],B[i][I.lon]]),{renderer:rend,weight:4,opacity:.9,lineCap:"round",lineJoin:"round"});
+  pl._zkG=gi;pl._zkVis=false;
+  pl.on("click",e=>{L.DomEvent.stopPropagation(e);openList(groupTitle(gi),G[gi][2].flat(),e.latlng);});
+  lines.push(pl);
+}));
+const dots=B.map((b,i)=>{
+  const m=L.circleMarker([b[I.lat],b[I.lon]],{renderer:rend,radius:3,weight:1,color:"#fff",opacity:1,fillOpacity:1});
+  m._zkI=i;m._zkVis=false;
+  m.on("click",e=>{L.DomEvent.stopPropagation(e);openBout(i);});
+  return m;
+});
+const bounds=L.latLngBounds(B.filter(b=>isFinite(b[I.lat])&&isFinite(b[I.lon])).map(b=>[b[I.lat],b[I.lon]]));
+if(M.napUrl)map.fitBounds([[50.75,3.36],[53.55,7.23]]);
+else if(bounds.isValid())map.fitBounds(bounds,{padding:[20,20],maxZoom:15});
+
+let C=[],GC=[];
+function groupClass(gi){
+  const idx=G[gi][2].flat();let vals=[],stab=0;
+  for(const i of idx){const c=C[i];if(c!=="oud"){vals.push(B[i][I.recent]);if(c==="stab")stab++;}}
+  if(!vals.length)return["oud",null,0];
+  const med=median(vals);
+  const c=stab*2>=vals.length?"stab":snelKl(med);
+  return[c,med,vals.length];
+}
+function sizes(){
+  const z=map.getZoom();
+  return{r:z>=18?8:z>=17?6.5:z>=16?5:z>=15?4:z>=14?3:z>=13?2.3:1.7,
+         w:z>=18?10:z>=17?8:z>=16?6.5:z>=15?5:z>=14?4:z>=13?3:2.2,
+         sw:z>=16?1.5:z>=15?1:z>=14?0.6:0};
+}
+function styleAll(){
+  C=B.map(cls);GC=G.map((g,gi)=>groupClass(gi));
+  const sz=sizes();let added=false;
+  for(const pl of lines){
+    const c=GC[pl._zkG][0],vis=S.showBout!==false&&!!S.show[c];
+    pl.setStyle({color:COL[c],weight:sz.w,opacity:c==="oud"?.5:.9,dashArray:c==="stab"?(sz.w*0.3)+" "+(sz.w*1.6):null});
+    if(vis&&!pl._zkVis){lineLayer.addLayer(pl);pl._zkVis=true;added=true;}
+    else if(!vis&&pl._zkVis){lineLayer.removeLayer(pl);pl._zkVis=false;}
+  }
+  for(const m of dots){
+    const i=m._zkI,c=C[i],vis=S.showBout!==false&&!!S.show[c]&&(S.showDots||!inLine[i]);
+    const st=c==="stab";
+    m.setStyle({radius:st?sz.r+0.5:sz.r,fillColor:COL[c],color:st?RING:"#ffffff",weight:st?Math.max(1.2,sz.sw+0.6):sz.sw,stroke:st||sz.sw>0,fillOpacity:c==="oud"?.75:1});
+    if(vis&&!m._zkVis){dotLayer.addLayer(m);m._zkVis=true;}
+    else if(!vis&&m._zkVis){dotLayer.removeLayer(m);m._zkVis=false;}
+    else if(vis&&added&&m.bringToFront){m.bringToFront();}
+  }
+  counts();
+  napRefresh(true);
+  egRefresh(true);
+}
+function resize(){
+  const sz=sizes();
+  for(const pl of lines)if(pl._zkVis){const c=GC[pl._zkG][0];pl.setStyle({weight:sz.w,dashArray:c==="stab"?(sz.w*0.3)+" "+(sz.w*1.6):null});}
+  for(const m of dots)if(m._zkVis){const st=C[m._zkI]==="stab";m.setStyle({radius:st?sz.r+0.5:sz.r,weight:st?Math.max(1.2,sz.sw+0.6):sz.sw,stroke:st||sz.sw>0});}
+}
+map.on("zoomend",resize);
+map.on("moveend",counts);
+
+// ---------- legenda ----------
+const rowsEl=document.getElementById("rows");
+function buildRows(){
+  rowsEl.innerHTML=KL.map(k=>{const[l,s]=label(k);
+    const sw=k==="stab"?'<i class="sw dot stab"></i>':'<i class="sw" style="background:'+COL[k]+'"></i>';
+    return '<label class="row"><input type="checkbox" data-k="'+k+'"'+(S.show[k]?" checked":"")+'>'+sw+
+      '<span class="lbl">'+l+'<small>'+esc(s)+'</small></span><span class="cnt" id="cnt-'+k+'">–</span></label>';}).join("");
+  rowsEl.querySelectorAll("input").forEach(inp=>inp.addEventListener("change",()=>{S.show[inp.dataset.k]=inp.checked;save();styleAll();}));
+}
+function counts(){
+  const bb=map.getBounds();const n={zgroot:0,groot:0,matig:0,klein:0,nihil:0,stab:0,oud:0};
+  for(let i=0;i<B.length;i++){const b=B[i];if(bb.contains([b[I.lat],b[I.lon]]))n[C[i]]++;}
+  for(const k of KL){const el=document.getElementById("cnt-"+k);if(el)el.textContent=n[k].toLocaleString("en-GB");}
+  const tb=document.getElementById("cnt-bout");if(tb)tb.textContent=KL.reduce((a,k)=>a+n[k],0).toLocaleString("en-GB");
+}
+const boutCb=document.getElementById("cBout");boutCb.checked=S.showBout!==false;
+boutCb.addEventListener("change",()=>{S.showBout=boutCb.checked;save();styleAll();});
+const fld={sStabE:"stabEarly",sStabN:"stabNow",sStale:"staleYears"};
+function fillSettings(){
+  for(const id in fld)document.getElementById(id).value=S[fld[id]];
+  document.getElementById("cStale").checked=!!S.colorStale;
+  document.getElementById("cDots").checked=!!S.showDots;
+}
+for(const id in fld)document.getElementById(id).addEventListener("change",e=>{
+  const v=parseFloat(String(e.target.value).replace(",","."));
+  if(!isFinite(v)||v<0){fillSettings();return;}
+  S[fld[id]]=v;
+  save();fillSettings();buildRows();styleAll();
+});
+document.getElementById("cStale").addEventListener("change",e=>{S.colorStale=e.target.checked;save();styleAll();});
+document.getElementById("cDots").addEventListener("change",e=>{S.showDots=e.target.checked;save();styleAll();});
+document.getElementById("reset").addEventListener("click",()=>{const base=S.base,nap=S.showNap,nk=S.napKeuze;S=JSON.parse(JSON.stringify(DEF));S.base=base;S.showNap=nap;boutCb.checked=true;if(nk)S.napKeuze=true;save();fillSettings();buildRows();styleAll();});
+const legend=document.getElementById("legend"),tg=document.getElementById("toggle");
+tg.addEventListener("click",()=>{const c=legend.classList.toggle("collapsed");tg.textContent=c?"+":"–";tg.setAttribute("aria-expanded",String(!c));});
+if(window.innerWidth<640){legend.classList.add("collapsed");tg.textContent="+";tg.setAttribute("aria-expanded","false");}
+L.DomEvent.disableClickPropagation(legend);L.DomEvent.disableScrollPropagation(legend);
+L.DomEvent.disableClickPropagation(document.getElementById("search"));
+document.getElementById("src").innerHTML="Data from "+(M.napUrl?"Rijkswaterstaat (benchmarks), ":"")+"the City of Amsterdam (settlement bolts, updated "+fmtDate(M.generated)+")"+
+  (M.egmsUrl?" and Copernicus, the EU's Earth observation programme (satellite, measured "+esc(String(M.egmsRelease||"").replace("-","–"))+")":"")+". "+
+  M.count.toLocaleString("en-GB")+" settlement bolts, of which "+M.withSeries.toLocaleString("en-GB")+" with measurements over at least "+nf(M.minSpan,0)+" years. "+
+  "How fast a point is sinking is calculated from the latest measurement and a measurement at least "+nf(M.minSpan,0)+" years earlier. "+
+  "A presentation of public measurement data, without judgement or advice."+(M.proef?" <b>Test run: incomplete data.</b>":"");
+
+// ---------- popups ----------
+function chart(b,c){return chartSeries(b[I.ser],b[I.rfrom],c);}
+function chartSeries(s,rf,c){
+  if(!s||s.length<4)return"";
+  const W=290,H=130,l=38,r=10,t=10,bt=22;const ts=[],cs=[];
+  for(let k=0;k<s.length;k+=2){ts.push(s[k]+1900);cs.push(s[k+1]);}
+  const nu=new Date(),nuJ=nu.getFullYear()+nu.getMonth()/12,laatst=ts[ts.length-1];
+  // net als in het rapport van Pro: is er twee jaar of langer niet gemeten, dan loopt de as door tot nu, met een grijs vlak
+  const gat=nuJ-laatst>=2;
+  const t0=Math.floor(ts[0]),t1=gat?nu.getFullYear():(Math.ceil(laatst)||t0+1);
+  const cmin=Math.min(0,...cs),cmax=Math.max(1,...cs);
+  const X=v=>l+(v-t0)/((t1-t0)||1)*(W-l-r),Y=v=>t+(v-cmin)/((cmax-cmin)||1)*(H-t-bt);
+  const all=ts.map((v,k)=>X(v).toFixed(1)+","+Y(cs[k]).toFixed(1)).join(" ");
+  let rec="";
+  if(rf!=null){const pts=ts.map((v,k)=>[v,cs[k]]).filter(p=>p[0]>=rf-1e-6);rec='<polyline points="'+pts.map(p=>X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join(" ")+'" fill="none" stroke="'+COL[c]+'" stroke-width="3" stroke-linecap="round"/>';}
+  const dotsS=ts.map((v,k)=>'<circle cx="'+X(v).toFixed(1)+'" cy="'+Y(cs[k]).toFixed(1)+'" r="2.6" fill="#24507a"/>').join("");
+  let vlak="";
+  if(gat){const xa=X(laatst),xb=X(t1),xm=(xa+xb)/2;
+    vlak='<rect x="'+xa.toFixed(1)+'" y="'+t+'" width="'+Math.max(0,xb-xa).toFixed(1)+'" height="'+(H-t-bt)+'" fill="#f1f0eb"><title>Not measured after '+Math.floor(laatst)+'</title></rect>'+
+      (xb-xa>=44?'<text x="'+xm.toFixed(1)+'" y="'+(t+12)+'" text-anchor="middle" font-size="9.5" fill="#8a8780">not measured</text>'+
+                 '<text x="'+xm.toFixed(1)+'" y="'+(t+23)+'" text-anchor="middle" font-size="9.5" fill="#8a8780">after '+Math.floor(laatst)+'</text>'
+                :'<text x="'+(xb-3).toFixed(1)+'" y="'+(t+11)+'" text-anchor="end" font-size="9.5" fill="#8a8780" stroke="#fff" stroke-width="3" paint-order="stroke">not measured after '+Math.floor(laatst)+'</text>');}
+  return '<svg class="chart" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Cumulative subsidence">'+vlak+
+    '<line x1="'+l+'" x2="'+(W-r)+'" y1="'+Y(0)+'" y2="'+Y(0)+'" stroke="#c9c6bc"/>'+
+    '<line x1="'+l+'" x2="'+(W-r)+'" y1="'+Y(cmax)+'" y2="'+Y(cmax)+'" stroke="#eeece6"/>'+
+    '<text x="'+(l-5)+'" y="'+(Y(0)+4)+'" text-anchor="end" font-size="10" fill="#6b6a64">0</text>'+
+    '<text x="'+(l-5)+'" y="'+(Y(cmax)+4)+'" text-anchor="end" font-size="10" fill="#6b6a64">'+nf(cmax,0)+' mm</text>'+
+    '<text x="'+l+'" y="'+(H-6)+'" font-size="10" fill="#6b6a64">'+t0+'</text>'+
+    '<text x="'+(W-r)+'" y="'+(H-6)+'" text-anchor="end" font-size="10" fill="#6b6a64">'+t1+'</text>'+
+    '<text x="'+((l+W-r)/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="#6b6a64">subsidence ↓</text>'+
+    '<polyline points="'+all+'" fill="none" stroke="#24507a" stroke-width="1.5"/>'+rec+dotsS+'</svg>';
+}
+function pill(c){const[l]=label(c);return '<div class="pill"><i style="background:'+COL[c]+(c==="stab"?";box-shadow:0 0 0 2px "+RING:"")+'"></i>'+l+'</div>';}
+function openBout(i){
+  if(!curPop||curPop.i!==i)TEL.tel("punt");
+  const b=B[i],c=C[i];
+  const y=v=>v==null?"":Math.floor(v);
+  const age=b[I.lastY]!=null?Math.max(0,Math.round(M.nowYear-b[I.lastY])):null;
+  const html='<div class="pop"><div class="ttl">'+esc(b[I.addr]||"Address unknown")+'</div>'+
+    '<div class="sub">Settlement bolt '+esc(b[I.id])+' (City of Amsterdam)'+(b[I.status]&&b[I.status]!=="Actueel"?" · "+esc(b[I.status]):"")+'</div>'+pill(c)+
+    '<table class="kv">'+
+    '<tr><th>Recent years</th><td>'+(b[I.recent]==null?"too few measurements":nf(b[I.recent])+" mm/year <span class=m>"+y(b[I.rfrom])+"–"+y(b[I.lastY])+"</span>")+'</td></tr>'+
+    '<tr><th>Before that</th><td>'+(b[I.early]==null?"–":nf(b[I.early])+" mm/year <span class=m>"+y(b[I.efrom])+"–"+y(b[I.rfrom])+"</span>")+'</td></tr>'+
+    '<tr><th>Since 1st measurement</th><td>'+(b[I.total]==null?"–":nf(b[I.total])+" mm/year")+'</td></tr>'+
+    '<tr><th>Total subsidence</th><td>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</td></tr>'+
+    '<tr><th>Measurements</th><td>'+b[I.n]+(b[I.last]?" · latest "+fmtDate(b[I.last])+(age!=null?" ("+age+(age===1?" year ago)":" years ago)"):""):"")+'</td></tr>'+
+    '</table>'+omgRegel(omgeving(b[I.lat],b[I.lon],ROND_M,i,-1))+(b[I.ser]?chart(b,c):serState==="laden"?'<p class="mnote">Loading chart …</p>':serState==="fout"&&b[I.n]>1?'<p class="mnote">The chart could not be loaded.</p>':"")+
+    '<a class="raw" href="#" data-meas="'+i+'">View all measurement data</a> · '+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(b[I.id])+'" data-link>Link to this point</a>'+boutMeer(i)+'<p class="disc">Public measurement data, without judgement or advice. <a href="#over">More</a>'+ntLink(b[I.id],b[I.addr])+'</p>'+'</div>';
+  const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([b[I.lat],b[I.lon]]).setContent(html).openOn(map);
+  curPop={i:i,p:p};
+  const el=p.getElement&&p.getElement();
+  if(el){const a=el.querySelector("a[data-meas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();openMeas(i);});}
+  bindLink(el);rondLink(el,b[I.lat],b[I.lon],b[I.addr]||("settlement bolt "+b[I.id]),6);
+  egPopup(el,b[I.lat],b[I.lon]);bagPopup(el,b[I.lat],b[I.lon],6);
+}
+// "Link naar dit punt": kopieert de link; lukt dat niet, dan gewoon openen.
+function bindLink(el){
+  const a=el&&el.querySelector("a[data-link]");if(!a)return;
+  a.addEventListener("click",ev=>{
+    let url;try{url=new URL(a.getAttribute("href"),location.href).href;}catch(e){return;}
+    if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
+      ev.preventDefault();
+      navigator.clipboard.writeText(url).then(()=>say("Link to this point copied."),()=>{location.href=url;});
+    }
+  });
+}
+function houseNo(a){const m=String(a||"").match(/\s(\d+)/);return m?parseInt(m[1],10):1e9;}
+function groupTitle(gi){return G[gi][0]||"No address";}
+function openList(title,idx,latlng){
+  idx=idx.slice().sort((a,b)=>houseNo(B[a][I.addr])-houseNo(B[b][I.addr])||String(B[a][I.addr]).localeCompare(String(B[b][I.addr]),"nl"));
+  const v=idx.filter(i=>C[i]!=="oud").map(i=>B[i][I.recent]);const med=v.length?median(v):null;
+  const n={zgroot:0,groot:0,matig:0,klein:0,nihil:0,stab:0,oud:0};idx.forEach(i=>n[C[i]]++);
+  const mix=KL.filter(k=>n[k]).map(k=>'<span style="white-space:nowrap"><i class="sw" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+COL[k]+'"></i> '+n[k]+"</span>").join(" &nbsp;");
+  const rows=idx.map(i=>'<tr data-i="'+i+'"><td><i class="sw" style="background:'+COL[C[i]]+'"></i></td><td>'+esc(B[i][I.addr]||B[i][I.id])+'</td><td class="n">'+(B[i][I.recent]==null?"–":nf(B[i][I.recent]))+'</td><td class="n m">'+esc((B[i][I.last]||"").slice(0,4))+"</td></tr>").join("");
+  const html='<div class="pop"><div class="ttl">'+esc(title)+'</div><div class="sub">'+idx.length+(idx.length>1?" settlement bolts":" settlement bolt")+(med==null?"":" · "+snelZin(med,v.length))+'</div>'+
+    '<div>'+mix+'</div><div class="list"><table><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:4px">Per bolt: mm per year in recent years · year of the latest measurement. Click a row for details.</div>'+straatLinks(idx)+'<p class="disc">Public measurement data, without judgement or advice. <a href="#over">More</a></p>'+'</div>';
+  const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng(latlng).setContent(html).openOn(map);
+  const el=p.getElement&&p.getElement();
+  if(el)el.querySelectorAll("tr[data-i]").forEach(tr=>tr.addEventListener("click",()=>{const i=+tr.dataset.i;map.setView([B[i][I.lat],B[i][I.lon]],Math.max(map.getZoom(),18));setTimeout(()=>openBout(i),250);}));
+}
+
+// ---------- meetgegevens (tabel + ruwe data) ----------
+const modal=document.getElementById("modal"),mTitle=document.getElementById("mTitle"),mSub=document.getElementById("mSub"),mBody=document.getElementById("mBody");
+let lastFocus=null;
+function closeMeas(){modal.hidden=true;mBody.innerHTML="";if(lastFocus&&lastFocus.focus)lastFocus.focus();}
+document.getElementById("mClose").addEventListener("click",closeMeas);
+modal.addEventListener("click",e=>{if(e.target===modal)closeMeas();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!modal.hidden)closeMeas();});
+const SOORT={N:"Baseline measurement",H:"Repeat measurement"};
+const SRCQ={gem:'<p class="mnote">Questions about this data, or is something wrong? Please contact the City of Amsterdam: <a href="mailto:gebruik.basisinformatie@amsterdam.nl">gebruik.basisinformatie@amsterdam.nl</a>.</p>',
+  rws:'<p class="mnote">Questions about this data, or is something wrong? Please contact Rijkswaterstaat via the <a href="https://www.rijkswaterstaat.nl/formulieren/contactformulier-servicedesk-data" target="_blank" rel="noopener">Servicedesk Data contact form</a> (in Dutch).</p>'};
+function measUrl(b,size){return M.api+"metingen/?hoortBijMeetbout.identificatie="+encodeURIComponent(b[I.id])+"&_format=json&_pageSize="+size;}
+function summaryHtml(b){
+  const y=v=>v==null?"":Math.floor(v);
+  return '<div class="msum">'+
+    '<span>Recent: <b>'+(b[I.recent]==null?"–":nf(b[I.recent])+" mm/year")+'</b> '+(b[I.rfrom]!=null?'<span class="m">'+y(b[I.rfrom])+"–"+y(b[I.lastY])+"</span>":"")+'</span>'+
+    '<span>Earlier: <b>'+(b[I.early]==null?"–":nf(b[I.early])+" mm/year")+'</b> '+(b[I.efrom]!=null?'<span class="m">'+y(b[I.efrom])+"–"+y(b[I.rfrom])+"</span>":"")+'</span>'+
+    '<span>Total subsidence: <b>'+(b[I.cum]==null?"–":nf(b[I.cum],1)+" mm")+'</b></span>'+
+    '<span>Class: <b>'+label(C[b._i!=null?b._i:0])[0]+'</b></span></div>';
+}
+function yearFracOf(iso){const d=new Date(iso+"T00:00:00Z");if(isNaN(d))return null;const y=d.getUTCFullYear();return y+(Date.UTC(y,d.getUTCMonth(),d.getUTCDate())-Date.UTC(y,0,1))/864e5/365.25;}
+function rawSection(url,data,err){
+  const link='<a href="'+esc(url)+'" target="_blank" rel="noopener">Open at the City of Amsterdam ↗</a>';
+  if(err)return '<h3>Raw data from the City of Amsterdam</h3><p class="mnote">Could not fetch the raw data directly ('+esc(err)+'). '+link+'</p>';
+  return '<h3>Raw data from the City of Amsterdam</h3><p class="mnote" style="margin:0 0 6px">Exactly as the city supplies it (API, JSON). '+link+'</p><pre class="rawjson" id="rawjson"></pre>';
+}
+function openMeas(i){
+  TEL.tel("meet");
+  const b=B[i];lastFocus=document.activeElement;
+  mTitle.textContent=b[I.addr]||"Settlement bolt "+b[I.id];
+  mSub.textContent="Settlement bolt "+b[I.id]+(b[I.blk]?" · block "+b[I.blk]:"")+(b[I.status]?" · "+b[I.status]:"");
+  mBody.innerHTML='<p class="mnote">Fetching measurement data from the city …</p>';
+  modal.hidden=false;document.getElementById("mClose").focus();
+  const url=measUrl(b,1000);
+  fetch(url,{headers:{Accept:"application/hal+json, application/json"}}).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(data=>{
+    if(modal.hidden)return;
+    const emb=data&&data._embedded||{};let items=emb.metingen||Object.values(emb).find(Array.isArray)||[];
+    items=items.slice().sort((a,c)=>String(a.datum).localeCompare(String(c.datum)));
+    const rf=b[I.rfrom];
+    const rows=items.map(m=>{const t=yearFracOf(String(m.datum||"").slice(0,10));const rec=rf!=null&&t!=null&&t>=rf-0.006;
+      const s=m.typeMeting||"";
+      return '<tr'+(rec?' class="rec"':'')+'><td>'+fmtDate(String(m.datum||"").slice(0,10))+'</td><td>'+esc(SOORT[s]||s||"–")+
+        '</td><td class="n">'+(m.hoogteTovNap==null?"–":nf(m.hoogteTovNap,4))+'</td><td class="n">'+(m.zakking==null?"–":nf(m.zakking,1))+
+        '</td><td class="n">'+(m.zakkingCumulatief==null?"–":nf(m.zakkingCumulatief,1))+'</td><td class="n">'+(m.aantalDagen==null?"–":Number(m.aantalDagen).toLocaleString("en-GB"))+
+        '</td><td class="n">'+(m.zakkingssnelheid==null?"–":nf(m.zakkingssnelheid))+'</td><td>'+esc(m.isGemetenDoor||"–")+'</td><td>'+esc(m.wijzeVanInwinnenOmschrijving||"–")+'</td></tr>';}).join("");
+    mBody.innerHTML=summaryHtml(Object.assign(b.slice(),{_i:i}))+
+      '<div class="mt-wrap"><table class="mt"><thead><tr><th>Date</th><th>Type of measurement</th><th class="n">Height relative to NAP (m)</th><th class="n">Subsidence since previous (mm)</th><th class="n">Total subsidence (mm)</th><th class="n">Days since previous</th><th class="n">Avg. rate since start (mm/year)</th><th>Measured by</th><th>Method</th></tr></thead><tbody>'+
+      (rows||'<tr><td colspan="9">No measurements found.</td></tr>')+'</tbody></table></div>'+
+      '<p class="mnote">'+items.length+' measurements. Highlighted in yellow: the period over which the recent rate was calculated. Subsidence is positive when the point has moved down.</p>'+SRCQ.gem+
+      rawSection(url,data,null);
+    const pre=document.getElementById("rawjson");if(pre)pre.textContent=JSON.stringify(data,null,2);
+  })
+  .catch(err=>{
+    if(modal.hidden)return;
+    const s=b[I.ser]||[];const rows=[];
+    for(let k=0;k<s.length;k+=2){const t=s[k]+1900;const y=Math.floor(t);const d=new Date(Date.UTC(y,0,1)+(t-y)*365.25*864e5);
+      rows.push('<tr><td>± '+d.toLocaleDateString("en-GB",{month:"short",year:"numeric",timeZone:"UTC"})+'</td><td class="n">'+nf(s[k+1],1)+'</td></tr>');}
+    mBody.innerHTML='<div class="warn">The current data could not be fetched from the city. Below are the measurements as they were stored when this map was made (dates approximate).</div>'+
+      summaryHtml(Object.assign(b.slice(),{_i:i}))+
+      '<div class="mt-wrap"><table class="mt"><thead><tr><th>Date</th><th class="n">Total subsidence (mm)</th></tr></thead><tbody>'+(rows.join("")||'<tr><td colspan="2">No measurements stored.</td></tr>')+'</tbody></table></div>'+
+      rawSection(url,null,String(err&&err.message||err));
+  });
+}
+
+// ---------- zoeken ----------
+const byStreet=new Map();const nameOf=new Map();
+B.forEach((b,i)=>{const s=b[I.street];if(!s)return;const k=s.toLowerCase();if(!byStreet.has(k)){byStreet.set(k,[]);nameOf.set(k,s);}byStreet.get(k).push(i);});
+const streetKeys=[...byStreet.keys()].sort((a,b)=>a.localeCompare(b,"nl"));
+const msg=document.getElementById("msg");
+function say(t){msg.textContent=t;msg.hidden=false;clearTimeout(say._t);say._t=setTimeout(()=>msg.hidden=true,3500);}
+function sayHtml(h,ms){msg.innerHTML=h;msg.hidden=false;clearTimeout(say._t);say._t=setTimeout(()=>msg.hidden=true,ms||9000);}
+document.getElementById("search").addEventListener("submit",e=>{
+  e.preventDefault();
+  const q=document.getElementById("q").value.trim();if(!q)return;
+  TEL.tel("zoek");
+  if(M.napUrl&&/^\d{3}[a-z]\d{4}$/i.test(q)){napFind(q);return;}
+  if(/^\d{5,}$/.test(q)){const i=B.findIndex(b=>String(b[I.id])===q);if(i>=0){map.setView([B[i][I.lat],B[i][I.lon]],18);setTimeout(()=>openBout(i),300);return;}}
+  // 0. staat de lijst met suggesties open, dan de bovenste (zo komt een tikfout niet in een andere plaats uit)
+  if(!sug.hidden&&sugD.length){sugKies(sugI>=0?sugI:0);return;}
+  // 1. een Amsterdamse straat uit de meetboutgegevens (exacte naam, geen andere plaats genoemd)
+  const qa=q.replace(/[,\s]+amsterdam\s*$/i,"").trim();
+  const anders=/,|\b\d{4}\s?[a-z]{2}\b/i.test(qa);
+  const base=qa.toLowerCase().replace(/\s+\d.*$/,"").trim();
+  if(!anders&&byStreet.has(base)){showStreet(base,qa);return;}
+  // 2. elk adres of elke plaats in Nederland via de PDOK Locatieserver (overheid, open data)
+  zoekPdok(q).then(ok=>{if(!ok&&!fuzzyStreet(qa))say("Nothing found for “"+q+"”.");})
+    .catch(()=>{if(!fuzzyStreet(qa))say("Search failed. Please try again later.");});
+});
+function showStreet(key,q){
+  const idx=byStreet.get(key);
+  const num=q.match(/\s(\d+)/);
+  if(num){const n=parseInt(num[1],10);let best=null,bd=1e9;for(const i of idx){const h=houseNo(B[i][I.addr]);if(Math.abs(h-n)<bd){bd=Math.abs(h-n);best=i;}}
+    if(best!=null&&bd<=4){map.setView([B[best][I.lat],B[best][I.lon]],17);setTimeout(()=>openBout(best),300);toonRond(B[best][I.lat],B[best][I.lon],B[best][I.addr]||q,6);return;}}
+  const bb=L.latLngBounds(idx.map(i=>[B[i][I.lat],B[i][I.lon]]));
+  map.fitBounds(bb,{maxZoom:17,padding:[60,60]});
+  setTimeout(()=>openList(nameOf.get(key),idx,bb.getCenter()),400);
+}
+function fuzzyStreet(q){
+  const base=q.toLowerCase().replace(/\s+\d.*$/,"").trim();if(base.length<3)return false;
+  const key=streetKeys.find(k=>k.startsWith(base))||streetKeys.find(k=>k.includes(base));
+  if(!key)return false;showStreet(key,q);return true;
+}
+const PDOK_LS="https://api.pdok.nl/bzk/locatieserver/search/v3_1/free";
+const PDOK_SUG=PDOK_LS.replace(/free$/,"suggest"),PDOK_LOOK=PDOK_LS.replace(/free$/,"lookup");
+const PDOK_FQ="type:(adres OR weg OR postcode OR woonplaats OR gemeente)";
+// suggesties tijdens het typen: kies het juiste adres in de juiste straat en plaats
+const SUGT={adres:"address",weg:"street",postcode:"postcode",woonplaats:"place",gemeente:"municipality"};
+const qIn=document.getElementById("q"),sug=document.getElementById("sug");
+let sugT=null,sugI=-1,sugD=[],sugN=0;
+function sugSluit(){sug.hidden=true;sug.innerHTML="";sugD=[];sugI=-1;qIn.setAttribute("aria-expanded","false");qIn.removeAttribute("aria-activedescendant");}
+function sugZet(k){sugI=k;[...sug.children].forEach((li,j)=>li.classList.toggle("act",j===k));if(k>=0){qIn.setAttribute("aria-activedescendant","sug"+k);sug.children[k].scrollIntoView({block:"nearest"});}}
+qIn.addEventListener("input",()=>{clearTimeout(sugT);const v=qIn.value.trim();
+  if(v.length<3||/^\d{5,}$/.test(v)||(M.napUrl&&/^\d{3}[a-z]\d{4}$/i.test(v))){sugN++;sugSluit();return;}
+  sugT=setTimeout(()=>{const n=++sugN;
+    fetch(PDOK_SUG+"?rows=7&fq="+encodeURIComponent(PDOK_FQ)+"&q="+encodeURIComponent(v)).then(r=>r.json()).then(j=>{
+      if(n!==sugN)return;sugD=((j&&j.response&&j.response.docs)||[]).filter(d=>d.id&&d.weergavenaam);
+      if(!sugD.length||document.activeElement!==qIn){sugSluit();return;}
+      sug.innerHTML=sugD.map((d,k)=>'<li role="option" id="sug'+k+'" data-k="'+k+'">'+esc(d.weergavenaam)+'<span>'+esc(SUGT[d.type]||d.type||"")+'</span></li>').join("");
+      sugI=-1;sug.hidden=false;qIn.setAttribute("aria-expanded","true");}).catch(()=>{});},170);});
+qIn.addEventListener("keydown",e=>{if(sug.hidden||!sugD.length)return;
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();sugZet((sugI+(e.key==="ArrowDown"?1:-1)+sugD.length+(sugI<0&&e.key==="ArrowUp"?1:0))%sugD.length);}
+  else if(e.key==="Escape"){sugSluit();}});
+sug.addEventListener("mousedown",e=>{const li=e.target.closest("li");if(li){e.preventDefault();sugKies(+li.dataset.k);}});
+qIn.addEventListener("blur",()=>setTimeout(sugSluit,180));
+function sugKies(k){const d=sugD[k];if(!d)return;const q=d.weergavenaam;qIn.value=q;sugN++;sugSluit();TEL.tel("zoek");
+  fetch(PDOK_LOOK+"?fl=weergavenaam,type,centroide_ll,gemeentecode,gemeentenaam&id="+encodeURIComponent(d.id)).then(r=>r.json())
+    .then(j=>{const x=j&&j.response&&j.response.docs&&j.response.docs[0];if(!x||!toonPdok(x,q))say("Nothing found for “"+q+"”.");})
+    .catch(()=>{say("Search failed. Please try again later.");});}
+function zoekPdok(q){
+  const u=PDOK_LS+"?rows=1&fl=weergavenaam,type,centroide_ll,gemeentecode,gemeentenaam&fq="+encodeURIComponent(PDOK_FQ)+"&q="+encodeURIComponent(q);
+  return fetch(u).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(j=>{
+    const d=j&&j.response&&j.response.docs&&j.response.docs[0];return toonPdok(d,q);});
+}
+function toonPdok(d,q){
+    if(!d||!d.centroide_ll)return false;
+    const m=String(d.centroide_ll).match(/POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);if(!m)return false;
+    const z=({adres:17,postcode:16,weg:16,woonplaats:13,gemeente:12})[d.type]||15;
+    const la=parseFloat(m[2]),lo=parseFloat(m[1]);
+    map.setView([la,lo],z);
+    const gem={code:d.gemeentecode,naam:d.gemeentenaam};
+    if(d.type==="adres"||d.type==="postcode"||d.type==="weg")toonRond(la,lo,d.weergavenaam||q,d.type==="adres"?3:null,gem);
+    else{rondSluit();const x=gebCode(gem.code,gem.naam||(d.type==="gemeente"?String(d.weergavenaam||"").replace(/^Gemeente\s+/i,""):""));
+      if(x)sayHtml(esc(d.weergavenaam||q)+' · <a href="'+esc(x.u)+'">Figures for the municipality of '+esc(x.n)+' →</a>');else say(d.weergavenaam||q);}
+    return true;
+}
+
+// ---------- links naar de pagina's per gemeente en buurt ----------
+const GB=M.gebied||null;
+function gebGem(i){return GB&&i>=0&&GB.g[i]?{u:"gemeente/"+GB.g[i][0]+"/",n:GB.g[i][1]}:null;}
+function gebBuurt(i){return GB&&GB.a>=0&&i>=0&&GB.b&&GB.b[i]?{u:"gemeente/"+GB.g[GB.a][0]+"/"+GB.b[i][0]+"/",n:GB.b[i][1]}:null;}
+function gebBout(i){if(!GB)return null;const bi=GB.bout?GB.bout[i]:-1;return gebBuurt(bi)||gebGem(GB.a);}
+function gebNap(i){return GB&&NAP.g?gebGem(NAP.g[i]):null;}
+function gebCode(code,naam){
+  if(!GB)return null;const c=String(code||"").replace(/\D/g,"").padStart(4,"0"),nm=String(naam||"").toLowerCase();
+  let i=code?GB.g.findIndex(g=>g[2]&&g[2].replace(/\D/g,"").padStart(4,"0")===c):-1;
+  if(i<0&&nm)i=GB.g.findIndex(g=>g[1].toLowerCase()===nm);
+  return gebGem(i);
+}
+function slugJs(t){return String(t||"").normalize("NFKD").replace(/[^\x00-\x7f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"gebied";}
+// Straat in de lijst-pop-up: link naar de buurtpagina('s), naar de regel van die straat
+function gebStraat(si){return GB&&GB.a>=0&&GB.s&&si>=0&&GB.s[si]?{u:"gemeente/"+GB.g[GB.a][0]+"/straat/"+GB.s[si][0]+"/",n:GB.s[si][1]}:null;}
+function gebWijk(wi){return GB&&GB.a>=0&&GB.w&&wi>=0&&GB.w[wi]?{u:"gemeente/"+GB.g[GB.a][0]+"/wijk/"+GB.w[wi][0]+"/",n:"district "+GB.w[wi][1]}:null;}
+function straatVanBout(i){return GB&&GB.st?gebStraat(GB.st[i]):null;}
+function straatLinks(idx){
+  if(!GB||!GB.bout)return"";const tel=new Map();
+  const sp=straatVanBout(idx[0]);const eerst=sp?'<a href="'+esc(sp.u)+'">All settlement bolts on '+esc(sp.n)+', by house number →</a>':"";
+  for(const i of idx){const bi=GB.bout[i];tel.set(bi,(tel.get(bi)||0)+1);}
+  const st=B[idx[0]][I.street];const anker=st?"#straat-"+slugJs(st):"";
+  const uit=[...tel.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(([bi])=>{const x=gebBuurt(bi);
+    if(x)return '<a href="'+esc(x.u+anker)+'">Figures for '+esc(st||"this street")+' in '+esc(x.n)+' →</a>';
+    const g=gebGem(GB.a);return g?'<a href="'+esc(g.u)+'">Figures for '+esc(g.n)+' →</a>':"";}).filter(Boolean);
+  const alle=(eerst?[eerst]:[]).concat([...new Set(uit)]);
+  return alle.length?'<p class="meer">'+alle.join("<br>")+'</p>':"";
+}
+function meerHtml(x){return x?'<p class="meer"><a href="'+esc(x.u)+'">Figures for '+esc(x.n)+' →</a></p>':"";}
+function boutMeer(i){const sp=straatVanBout(i),x=gebBout(i);
+  const d=[];if(sp)d.push('<a href="'+esc(sp.u)+'">All settlement bolts on '+esc(sp.n)+' →</a>');
+  if(x)d.push('<a href="'+esc(x.u)+'">Figures for '+esc(x.n)+' →</a>');
+  return d.length?'<p class="meer">'+d.join("<br>")+'</p>':"";}
+// gemeente op een plek: via het dichtstbijzijnde adres bij de PDOK Locatieserver (alleen als het nodig is)
+const PDOK_REV="https://api.pdok.nl/bzk/locatieserver/search/v3_1/reverse";
+function gebBuurtPlek(lat,lon){
+  // in Amsterdam: de buurt van de dichtstbijzijnde meetbout (binnen 120 m)
+  if(!GB)return null;const kx=111320*Math.cos(lat*Math.PI/180);let bi=-1,bd=120;
+  for(let i=0;i<B.length;i++){const dx=(B[i][I.lon]-lon)*kx,dy=(B[i][I.lat]-lat)*111320,d=Math.hypot(dx,dy);if(d<bd){bd=d;bi=i;}}
+  return bi>=0?gebBout(bi):null;
+}
+function gebPlek(lat,lon){
+  if(!GB)return Promise.resolve(null);
+  // in Amsterdam: de buurt van de dichtstbijzijnde meetbout (binnen 120 m)
+  const kx=111320*Math.cos(lat*Math.PI/180);let bi=-1,bd=120;
+  for(let i=0;i<B.length;i++){const dx=(B[i][I.lon]-lon)*kx,dy=(B[i][I.lat]-lat)*111320,d=Math.hypot(dx,dy);if(d<bd){bd=d;bi=i;}}
+  if(bi>=0){const x=gebBout(bi);if(x)return Promise.resolve(x);}
+  return fetch(PDOK_REV+"?lat="+lat.toFixed(6)+"&lon="+lon.toFixed(6)+"&type=adres&rows=1&fl=gemeentecode,gemeentenaam")
+    .then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(j=>{const d=j&&j.response&&j.response.docs&&j.response.docs[0];return d?gebCode(d.gemeentecode,d.gemeentenaam):null;})
+    .catch(()=>null);
+}
+
+// ---------- omgeving: meetpunten binnen een straal ----------
+const ROND_M=250;
+function omgeving(lat,lon,r,skipB,skipN){
+  const kx=111320*Math.cos(lat*Math.PI/180),ky=111320;
+  const nieuw=()=>({n:0,k:{zgroot:0,groot:0,matig:0,klein:0,nihil:0,stab:0,oud:0},v:[],laatste:0,dichtst:Infinity});
+  const res={b:nieuw(),p:nieuw(),napKlaar:!!NAP.rows};
+  for(let i=0;i<B.length;i++){
+    if(i===skipB)continue;const b=B[i];
+    const dx=(b[I.lon]-lon)*kx,dy=(b[I.lat]-lat)*ky,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<res.b.dichtst)res.b.dichtst=d;
+    if(d>r)continue;const c=C[i]||"oud",t=res.b;t.n++;t.k[c]++;
+    if(c!=="oud"&&b[I.recent]!=null)t.v.push(b[I.recent]);if(b[I.lastY])t.laatste=Math.max(t.laatste,Math.floor(b[I.lastY]));
+  }
+  if(NAP.rows)for(let i=0;i<NAP.rows.length;i++){
+    if(i===skipN)continue;const q=NAP.rows[i];
+    const dx=(q[NI.lon]-lon)*kx,dy=(q[NI.lat]-lat)*ky,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<res.p.dichtst)res.p.dichtst=d;
+    if(d>r)continue;const c=napCls(q),t=res.p;t.n++;t.k[c]++;
+    if(c!=="oud"&&q[NI.recent]!=null)t.v.push(q[NI.recent]);if(q[NI.lastY])t.laatste=Math.max(t.laatste,Math.floor(q[NI.lastY]));
+  }
+  return res;
+}
+// "zakt 1,2 mm per jaar" / "zakken doorgaans …" / "stijgt …"
+function snelZin(v,n){const meer=n>1,st=v<0;return (meer?"typically ":"")+(st?(meer?"rise":"rises"):(meer?"sink":"sinks"))+" "+nf(Math.abs(v))+" mm per year";}
+function afstand(m){return m<1000?Math.round(m/10)*10+" m":nf(m/1000,1)+" km";}
+function omgRegel(o){
+  const d=[];
+  if(o.b.v.length)d.push(o.b.v.length+" other settlement bolt"+(o.b.v.length>1?"s ":" ")+snelZin(median(o.b.v),o.b.v.length));
+  if(o.p.v.length)d.push(o.p.v.length+" other benchmark"+(o.p.v.length>1?"s ":" ")+snelZin(median(o.p.v),o.p.v.length));
+  return d.length?'<div class="omg">Nearby (within '+ROND_M+' m): '+d.join("; ")+'.</div>':"";
+}
+const ROND={el:document.getElementById("rond"),cirkel:null};
+// De stippelcirkel staat in een eigen laag zonder klikken, zodat meetpunten eronder klikbaar blijven.
+if(map.createPane){map.createPane("rond");const rp=map.getPane("rond");if(rp){rp.style.zIndex=450;rp.style.pointerEvents="none";}}
+ROND.rend=L.svg({pane:"rond"});
+function rondSluit(){ROND.el.hidden=true;ROND.terug=false;ROND.pandVorm=false;if(typeof bagVormWeg==="function")bagVormWeg();if(ROND.cirkel){map.removeLayer(ROND.cirkel);ROND.cirkel=null;}}
+function toonRond(lat,lon,naam,pandM,gem){
+  if(ROND.cirkel)map.removeLayer(ROND.cirkel);
+  ROND.pandVorm=false;bagVormWeg();ROND.geb=null;
+  ROND.cirkel=L.circle([lat,lon],{radius:ROND_M,color:RING,weight:2,dashArray:"5 5",fill:false,interactive:false,renderer:ROND.rend,pane:"rond"}).addTo(map);
+  const blok=(t,soort,meer,enkel)=>{
+    if(!t.n)return '<p class="rs"><b>'+soort+'</b>: none within '+ROND_M+' m'+(isFinite(t.dichtst)?' (nearest at '+afstand(t.dichtst)+')':'')+'.</p>';
+    const bar=KL.filter(k=>t.k[k]).map(k=>'<i style="width:'+(100*t.k[k]/t.n).toFixed(1)+'%;background:'+COL[k]+'" title="'+esc(label(k)[0])+': '+t.k[k]+'"></i>').join("");
+    return '<p class="rs"><b>'+t.n+' '+(t.n>1?meer:enkel)+'</b>'+(t.v.length?' · '+snelZin(median(t.v),t.v.length)+(t.v.length<t.n?' (rate known for '+t.v.length+')':''):(t.n>1?' · no recent rate known for any of them':' · no recent rate known'))+
+      '<span class="rbar">'+bar+'</span><span class="rk">'+KL.filter(k=>t.k[k]).map(k=>esc(label(k)[0])+' '+t.k[k]).join(" · ")+(t.laatste?' · latest measurement '+t.laatste:'')+'</span></p>';
+  };
+  const teken=()=>{
+    const o=omgeving(lat,lon,ROND_M);
+    ROND.el.innerHTML='<div class="rt"><div><h2>Around '+esc(naam)+'</h2><div class="rk">All measuring points within '+ROND_M+' metres (the dotted line on the map)</div></div><button class="x" type="button" aria-label="Close">×</button></div>'+
+      (pandM!=null?'<div id="rondPand"></div>':"")+
+      ((o.b.n||o.b.dichtst<3000)?blok(o.b,"Settlement bolts","settlement bolts","settlement bolt"):"")+(M.napUrl?(o.napKlaar?blok(o.p,"Benchmarks","benchmarks","benchmark"):'<p class="rs rk">Loading benchmarks …</p>'):"")+
+      (M.egmsUrl?'<div id="rondEg"><p class="rs rk">Loading satellite measurements …</p></div>':"")+
+      '<div id="rondGeb"></div><p class="rs rk">Measured rates, without judgement or advice. Click a point for details.</p>';
+    ROND.el.querySelector(".x").addEventListener("click",rondSluit);
+    ROND.el.hidden=false;
+    (ROND.geb?Promise.resolve(ROND.geb):(gebBuurtPlek(lat,lon)||(gem&&gebCode(gem.code,gem.naam)))?Promise.resolve(gebBuurtPlek(lat,lon)||gebCode(gem.code,gem.naam)):gebPlek(lat,lon)).then(x=>{
+      ROND.geb=x;const box=document.getElementById("rondGeb");if(x&&box&&!ROND.el.hidden)box.innerHTML=meerHtml(x);});
+    if(pandM!=null)bagPand(lat,lon,pandM).then(p=>{const box=document.getElementById("rondPand");
+      if(!p||!box||ROND.el.hidden)return;box.innerHTML=bagTekst(p);ROND.pandVorm=true;bagVorm(p.geom);});
+    if(M.egmsUrl)egRond(lat,lon,ROND_M).then(e=>{
+      const box=document.getElementById("rondEg");if(!box)return;
+      if(!e||!e.n){box.innerHTML='<p class="rs"><b>Satellite</b>: nothing has been measured within '+ROND_M+' m here.</p>';return;}
+      const bar=KL.filter(k=>e.k[k]).map(k=>'<i style="width:'+(100*e.k[k]/e.n).toFixed(1)+'%;background:'+COL[k]+'"></i>').join("");
+      box.innerHTML='<p class="rs"><b>Satellite: '+e.n+' block'+(e.n>1?'s':'')+' of 100 m</b>'+(e.v.length?' · '+egZin(median(e.v)):'')+
+        '<span class="rbar">'+bar+'</span><span class="rk">Ground, streets and buildings together, measured from space ('+esc(String(M.egmsRelease||"").replace("-","–"))+').</span></p>';
+    });
+    return o.napKlaar;
+  };
+  if(!teken()&&M.napUrl){if(!S.showNap){S.showNap=true;save();}napRefresh(true);
+    const t=setInterval(()=>{if(NAP.rows){clearInterval(t);if(!ROND.el.hidden)teken();}else if(NAP.state==="fout")clearInterval(t);},200);}
+}
+L.DomEvent.disableClickPropagation(ROND.el);L.DomEvent.disableScrollPropagation(ROND.el);
+map.on("contextmenu",e=>{if(e.originalEvent&&e.originalEvent.preventDefault)e.originalEvent.preventDefault();
+  map.closePopup();toonRond(e.latlng.lat,e.latlng.lng,"this point",2);});
+// link 'In de buurt' in een pop-up
+function rondLink(el,lat,lon,naam,pandM){
+  if(!el)return;const a=el.querySelector("a[data-rond]");if(!a)return;
+  a.addEventListener("click",ev=>{ev.preventDefault();map.closePopup();toonRond(lat,lon,naam,pandM);});
+}
+const RONDA='<a class="raw" href="#" data-rond>Everything within '+ROND_M+' m</a> · ';
+// Op mobiel is er geen ruimte voor paneel én pop-up: paneel even weg zolang een pop-up open is.
+map.on("popupopen",()=>{if(!ROND.el.hidden&&matchMedia("(max-width:640px)").matches){ROND.el.hidden=true;ROND.terug=true;}});
+// Op een telefoon schuift de inhoud van een pop-up van onderen in beeld (een 'sheet'); het punt blijft zichtbaar.
+const SHEET={el:document.getElementById("sheet"),mob:()=>matchMedia("(max-width:640px)").matches};
+if(SHEET.el){
+  const origPan=L.Popup.prototype._adjustPan;
+  L.Popup.prototype._adjustPan=function(){if(SHEET.mob())return;return origPan&&origPan.apply(this,arguments);};
+  map.on("popupopen",e=>{
+    if(!SHEET.mob())return;const c=e.popup.getElement();if(!c)return;SHEET.cur=e.popup;
+    SHEET.el.querySelector(".body").appendChild(c);SHEET.el.hidden=false;document.body.classList.add("sheet");
+    SHEET.el.querySelector(".body").scrollTop=0;
+    // het punt boven de sheet houden
+    requestAnimationFrame(()=>{const h=SHEET.el.offsetHeight,H=map.getSize().y,pt=map.latLngToContainerPoint(e.popup.getLatLng());
+      const doel=Math.max(60,(H-h)/2);if(pt.y>H-h-30||pt.y<50)map.panBy([0,pt.y-doel],{animate:true});});
+  });
+  map.on("popupclose",e=>{if(e.popup!==SHEET.cur)return;SHEET.cur=null;
+    const c=e.popup.getElement();if(c&&c.parentNode===SHEET.el.querySelector(".body"))c.remove();
+    SHEET.el.hidden=true;document.body.classList.remove("sheet");});
+  SHEET.el.querySelector(".dicht").addEventListener("click",()=>map.closePopup());
+  L.DomEvent.disableClickPropagation(SHEET.el);L.DomEvent.disableScrollPropagation(SHEET.el);
+}
+map.on("popupclose",()=>{if(ROND.terug&&ROND.cirkel){ROND.el.hidden=false;}ROND.terug=false;});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!ROND.el.hidden&&["modal","aboutModal","fbModal","intro"].every(id=>{const x=document.getElementById(id);return !x||x.hidden;}))rondSluit();});
+
+// ---------- feedback ----------
+(function(){
+  const url=(M.feedbackUrl||"").trim(),btn=document.getElementById("fbBtn");
+  if(!/^https:\/\//i.test(url))return;   // geen formulierdienst ingesteld: geen knop
+  btn.hidden=false;
+  const fm=document.getElementById("fbModal"),form=document.getElementById("fbForm"),st=document.getElementById("fbStatus"),
+        msgEl=document.getElementById("fbMsg"),send=document.getElementById("fbSend"),stars=document.getElementById("fbStars");
+  let rating=0,prev=null;
+  for(let k=1;k<=5;k++){stars.insertAdjacentHTML("beforeend",'<input type="radio" name="fbr" id="fbr'+k+'" value="'+k+'"><label for="fbr'+k+'" title="'+k+(k===1?" star":" stars")+'" aria-label="'+k+(k===1?" star":" stars")+'">&#9733;</label>');}
+  const labs=[...stars.querySelectorAll("label")];
+  const paint=n=>labs.forEach((l,ix)=>l.classList.toggle("on",ix<n));
+  stars.querySelectorAll("input").forEach(inp=>inp.addEventListener("change",()=>{rating=+inp.value;paint(rating);if(st.className==="err"){st.textContent="";st.className="";}}));
+  labs.forEach((l,ix)=>{l.addEventListener("mouseenter",()=>paint(ix+1));l.addEventListener("mouseleave",()=>paint(rating));});
+  msgEl.addEventListener("input",()=>{document.getElementById("fbCnt").textContent=msgEl.value.length+" / 280";});
+  function open(){prev=document.activeElement;fm.hidden=false;st.textContent="";st.className="";const f=stars.querySelector("input");if(f)f.focus();}
+  function close(){fm.hidden=true;if(prev&&prev.focus)prev.focus();}
+  btn.addEventListener("click",open);
+  document.getElementById("fbClose").addEventListener("click",close);
+  fm.addEventListener("click",e=>{if(e.target===fm)close();});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!fm.hidden)close();});
+  form.addEventListener("submit",e=>{
+    e.preventDefault();
+    const text=msgEl.value.trim().slice(0,280);
+    if(document.getElementById("fbHp").value){st.className="ok";st.textContent="Thank you for your feedback!";return;}
+    if(!rating){st.className="err";st.textContent="Please choose 1 to 5 stars first.";return;}
+    const body={sterren:rating,tekst:text,versie:M.generated};
+    send.disabled=true;st.className="";st.textContent="Sending …";
+    // Google Apps Script beantwoordt een POST met een doorverwijzing; het antwoord lezen hangt af van
+    // CORS-headers die we niet in de hand hebben. Daarom 'no-cors' + text/plain: het bericht wordt
+    // altijd afgeleverd (geen preflight), alleen het antwoord blijft onleesbaar. Controle gebeurt hierboven.
+    fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)})
+      .then(()=>{
+        st.className="ok";st.textContent="Thank you for your feedback!";form.reset();rating=0;paint(0);document.getElementById("fbCnt").textContent="0 / 280";setTimeout(close,1800);})
+      .catch(()=>{st.className="err";st.textContent="Sending failed. Please try again later.";})
+      .finally(()=>{send.disabled=false;});
+  });
+  L.DomEvent.disableClickPropagation(btn);
+})();
+
+// ---------- NAP-peilmerken (Rijkswaterstaat, heel Nederland) ----------
+// Lui geladen: pas als de laag aan staat. Getekend binnen beeld vanaf zoom NAP.MINZ.
+const NI={p:0,lat:1,lon:2,oms:3,status:4,n:5,first:6,last:7,lastY:8,recent:9,rfrom:10,total:11,sprong:12};
+const NAP={rows:null,ser:null,serState:"",state:"",layer:L.layerGroup(),mk:new Map(),shown:new Set(),MINZ:11,STALE:20,cur:null,z:null,ver:0};
+if(map.createPane){map.createPane("napgrid");const gp=map.getPane&&map.getPane("napgrid");if(gp)gp.style.zIndex=350;}
+const GRID={layer:L.layerGroup(),rend:L.canvas({pane:"napgrid",padding:0.3}),cells:{}};
+const napRow=document.getElementById("naprow"),napCb=document.getElementById("cNap"),napNoteEl=document.getElementById("napnote");
+if(M.napUrl){napRow.hidden=false;napCb.checked=!!S.showNap;
+  napCb.addEventListener("change",()=>{S.showNap=napCb.checked;S.napKeuze=true;save();napRefresh(true);});}
+function napNote(t){napNoteEl.textContent=t||"";}
+function napCls(r){
+  if(r[NI.recent]==null||r[NI.sprong])return"oud";
+  if(M.nowYear-r[NI.lastY]>NAP.STALE)return"oud";
+  return snelKl(r[NI.recent]);
+}
+function napLoad(){
+  if(NAP.state==="laden")return;NAP.state="laden";napNote("Loading benchmarks …");
+  fetch(M.napUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(d=>{NAP.rows=d.p||[];NAP.g=Array.isArray(d.g)&&d.g.length===NAP.rows.length?d.g:null;NAP.serUrl=d.reeksen;NAP.opgehaald=d.opgehaald||"";NAP.state="ok";napRefresh(true);})
+  .catch(e=>{NAP.state="fout";napNote("The benchmarks could not be loaded ("+(e&&e.message||e)+").");});
+}
+function napLoadSer(){
+  if(NAP.ser||NAP.serState==="laden"||!NAP.serUrl)return;NAP.serState="laden";
+  fetch(NAP.serUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(a=>{NAP.ser=a;NAP.serState="ok";if(NAP.cur&&map.hasLayer(NAP.cur.p))napOpen(NAP.cur.i);})
+  .catch(()=>{NAP.serState="fout";if(NAP.cur&&map.hasLayer(NAP.cur.p))napOpen(NAP.cur.i);});
+}
+function napStyle(m,i){
+  const c=napCls(NAP.rows[i]),z=map.getZoom();
+  m.setStyle({radius:z>=16?7:z>=14?6:5,color:COL[c],weight:z>=14?3:2.5,opacity:c==="oud"?.75:1,fillColor:"#ffffff",fillOpacity:1});m._zkVer=NAP.ver;
+}
+function napRefresh(restyle){
+  if(!M.napUrl)return;
+  const on=!!S.showNap;napCb.checked=on;
+  const cnt=document.getElementById("cnt-nap");
+  if(!on){if(map.hasLayer(NAP.layer))map.removeLayer(NAP.layer);napGridClear();napNote("");cnt.textContent="–";return;}
+  if(!NAP.rows){napLoad();return;}
+  if(!map.hasLayer(NAP.layer))NAP.layer.addTo(map);
+  const z=map.getZoom();if(z!==NAP.z){NAP.z=z;restyle=true;}
+  if(restyle)NAP.ver++;
+  if(z<NAP.MINZ){NAP.layer.clearLayers();NAP.shown=new Set();napGrid(z,cnt);return;}
+  napGridClear();napNote("");
+  const bb=map.getBounds(),wide=bb.pad?bb.pad(0.25):bb,want=new Set();let inView=0;
+  for(let i=0;i<NAP.rows.length;i++){const r=NAP.rows[i];if(wide.contains([r[NI.lat],r[NI.lon]])){want.add(i);if(bb.contains([r[NI.lat],r[NI.lon]]))inView++;}}
+  for(const i of NAP.shown)if(!want.has(i))NAP.layer.removeLayer(NAP.mk.get(i));
+  for(const i of want){
+    let m=NAP.mk.get(i);
+    if(!m){const r=NAP.rows[i];m=L.circleMarker([r[NI.lat],r[NI.lon]],{renderer:rend});
+      m.on("click",e=>{L.DomEvent.stopPropagation(e);napOpen(i);});NAP.mk.set(i,m);}
+    if(m._zkVer!==NAP.ver)napStyle(m,i);
+    if(!NAP.shown.has(i))NAP.layer.addLayer(m);
+  }
+  NAP.shown=want;cnt.textContent=inView.toLocaleString("en-GB");
+}
+map.on("moveend",()=>napRefresh(false));
+// Uitgezoomd: vakjes met de mediaan van de recente zakking van de peilmerken erin.
+function napCells(zf){
+  if(GRID.cells[zf])return GRID.cells[zf];
+  const d=({7:0.16,8:0.08,9:0.04,10:0.02})[zf]||(zf<7?0.32:0.02),dl=d*1.6,cells=new Map();
+  for(let i=0;i<NAP.rows.length;i++){const r=NAP.rows[i];
+    const a=Math.floor(r[NI.lat]/d),o=Math.floor(r[NI.lon]/dl),k=a+":"+o;
+    let c=cells.get(k);if(!c){c={s:a*d,w:o*dl,n:a*d+d,e:o*dl+dl,idx:[]};cells.set(k,c);}c.idx.push(i);}
+  return GRID.cells[zf]=[...cells.values()];
+}
+function napGridClear(){GRID.layer.clearLayers();if(map.hasLayer(GRID.layer))map.removeLayer(GRID.layer);}
+function napGrid(z,cnt){
+  const zf=Math.floor(z),bb=map.getBounds(),wide=bb.pad?bb.pad(0.2):bb;let n=0;
+  GRID.layer.clearLayers();if(!map.hasLayer(GRID.layer))GRID.layer.addTo(map);
+  for(const c of napCells(zf)){
+    if(!wide.contains([(c.s+c.n)/2,(c.w+c.e)/2]))continue;
+    const vals=[];for(const i of c.idx){const r=NAP.rows[i];if(napCls(r)!=="oud")vals.push(r[NI.recent]);}
+    n+=c.idx.length;
+    const med=vals.length?median(vals):null,k=med==null?"oud":snelKl(med);
+    const rc=L.rectangle([[c.s,c.w],[c.n,c.e]],{renderer:GRID.rend,stroke:false,fillColor:COL[k],fillOpacity:k==="oud"?.22:.5});
+    rc.on("click",e=>{L.DomEvent.stopPropagation(e);map.setView([(c.s+c.n)/2,(c.w+c.e)/2],NAP.MINZ);});
+    rc._zkCell={n:c.idx.length,med:med,k:k};
+    GRID.layer.addLayer(rc);
+  }
+  cnt.textContent=n.toLocaleString("en-GB");
+  napNote("Zoomed out: each square shows the median of the benchmarks inside it. Click a square or zoom in for individual benchmarks.");
+}
+function napOpen(i){
+  const r=NAP.rows[i],c=napCls(r),y=v=>v==null?"":Math.floor(v);
+  if(!NAP.cur||NAP.cur.i!==i)TEL.tel("punt");
+  const age=r[NI.lastY]!=null?Math.max(0,Math.round(M.nowYear-r[NI.lastY])):null;
+  const s=NAP.ser?NAP.ser[i]:null;
+  const ch=s?chartSeries(s,r[NI.rfrom],c):NAP.serState==="fout"?'<p class="mnote">The chart could not be loaded.</p>':r[NI.n]>1?'<p class="mnote">Loading chart …</p>':"";
+  const lbl=c==="oud"?(r[NI.sprong]?"Uncertain measurements":"No recent or too few measurements"):label(c)[0];
+  const html='<div class="pop"><div class="ttl">NAP benchmark '+esc(r[NI.p])+' <span style="font-weight:400;color:var(--muted)">(Rijkswaterstaat)</span></div>'+
+    '<div class="sub">'+esc(r[NI.oms]||"")+'</div>'+
+    '<div class="pill"><i style="background:#fff;box-shadow:inset 0 0 0 2.5px '+COL[c]+'"></i>'+esc(lbl)+'</div>'+
+    '<table class="kv">'+
+    '<tr><th>Recent years</th><td>'+(r[NI.recent]==null?"too few measurements":nf(r[NI.recent])+" mm/year <span class=m>"+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>")+'</td></tr>'+
+    '<tr><th>Since 1st measurement</th><td>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/year <span class=m>"+esc((r[NI.first]||"").slice(0,4))+"–"+esc((r[NI.last]||"").slice(0,4))+"</span>")+'</td></tr>'+
+    '<tr><th>Measurements</th><td>'+r[NI.n]+(r[NI.last]?" · latest "+fmtDate(r[NI.last])+(age!=null?" ("+age+(age===1?" year ago)":" years ago)"):""):"")+'</td></tr>'+
+    '</table>'+omgRegel(omgeving(r[NI.lat],r[NI.lon],ROND_M,-1,i))+(r[NI.sprong]?'<p class="mnote">The measurements contain a sudden jump that cannot be explained (perhaps a measurement error or a different calculation method). That is why this point is grey.</p>':"")+ch+
+    '<p class="mnote">A benchmark is a small metal bolt in a building or bridge. Rijkswaterstaat measures its height once every 5 to 15 years. It moves with the ground in the surrounding area.</p>'+
+    (M.napService?'<a class="raw" href="#" data-nmeas="'+i+'">View all measurement data</a> · ':"")+RONDA+'<a class="raw" href="?punt='+encodeURIComponent(r[NI.p])+'" data-link>Link to this point</a>'+
+    '<div class="sub" style="margin-top:4px">Source: Rijkswaterstaat</div>'+meerHtml(gebNap(i))+'<p class="disc">Public measurement data, without judgement or advice. <a href="#over">More</a>'+ntLink(r[NI.p],"")+'</p>'+'</div>';
+  const p=L.popup({maxWidth:340,autoPanPadding:[20,20]}).setLatLng([r[NI.lat],r[NI.lon]]).setContent(html).openOn(map);
+  NAP.cur={i:i,p:p};
+  const el=p.getElement&&p.getElement();
+  if(el){const a=el.querySelector("a[data-nmeas]");if(a)a.addEventListener("click",ev=>{ev.preventDefault();napMeas(i);});}
+  bindLink(el);rondLink(el,r[NI.lat],r[NI.lon],"benchmark "+r[NI.p],6);
+  egPopup(el,r[NI.lat],r[NI.lon]);bagPopup(el,r[NI.lat],r[NI.lon],6);
+  if(!NAP.ser)napLoadSer();
+}
+function napQueryUrl(p,fmt){
+  return M.napService+"/4/query?"+new URLSearchParams({where:"puntnummer='"+String(p).replace(/'/g,"''")+"'",
+    outFields:"puntnummer,project_id,project_titel,projectdatum,hoogte,orde",orderByFields:"projectdatum",returnGeometry:"false",f:fmt}).toString();
+}
+function napSummary(r){
+  const c=napCls(r),y=v=>v==null?"":Math.floor(v);
+  const lbl=c==="oud"?(r[NI.sprong]?"Uncertain measurements":"No recent or too few measurements"):label(c)[0];
+  return '<div class="msum">'+
+    '<span>Recent years: <b>'+(r[NI.recent]==null?"–":nf(r[NI.recent])+" mm/year")+'</b> '+(r[NI.rfrom]!=null?'<span class="m">'+y(r[NI.rfrom])+"–"+y(r[NI.lastY])+"</span>":"")+'</span>'+
+    '<span>Since 1st measurement: <b>'+(r[NI.total]==null?"–":nf(r[NI.total])+" mm/year")+'</b></span>'+
+    '<span>Class: <b>'+esc(lbl)+'</b></span></div>';
+}
+function napRawSection(link,err){
+  const a='<a href="'+esc(link)+'" target="_blank" rel="noopener">Open at Rijkswaterstaat ↗</a>';
+  if(err)return '<h3>Raw data from Rijkswaterstaat</h3><p class="mnote">Could not fetch the raw data directly ('+esc(err)+'). '+a+'</p>';
+  return '<h3>Raw data from Rijkswaterstaat</h3><p class="mnote" style="margin:0 0 6px">Exactly as Rijkswaterstaat supplies it (JSON). '+a+'</p><pre class="rawjson" id="rawjson"></pre>';
+}
+function napMeas(i){
+  TEL.tel("meet");
+  const r=NAP.rows[i];lastFocus=document.activeElement;
+  mTitle.textContent="NAP benchmark "+r[NI.p]+" (Rijkswaterstaat)";
+  mSub.textContent=[r[NI.oms],r[NI.status]].filter(Boolean).join(" · ");
+  mBody.innerHTML='<p class="mnote">Fetching measurement data from Rijkswaterstaat …</p>';
+  modal.hidden=false;document.getElementById("mClose").focus();
+  const url=napQueryUrl(r[NI.p],"json"),link=napQueryUrl(r[NI.p],"html"),rf=r[NI.rfrom];
+  fetch(url).then(x=>{if(!x.ok)throw new Error("HTTP "+x.status);return x.json();})
+  .then(data=>{
+    if(modal.hidden)return;
+    if(data&&data.error)throw new Error(data.error.message||"error at Rijkswaterstaat");
+    const items=((data&&data.features)||[]).map(f=>f.attributes||{}).filter(a=>a.projectdatum!=null)
+      .sort((a,b)=>a.projectdatum-b.projectdatum||String(a.project_id).localeCompare(String(b.project_id)));
+    const herz=items.some(a=>String(a.project_id||"").indexOf("=")>=0);
+    let h0=null,prev=null,nUsed=0;
+    const rows=items.map(a=>{
+      const iso=new Date(a.projectdatum+432e5).toISOString().slice(0,10),t=yearFracOf(iso);
+      const u=!herz||String(a.project_id||"").indexOf("=")>=0;
+      let dz="–",tot="–";
+      if(u&&a.hoogte!=null){nUsed++;if(h0==null)h0=a.hoogte;tot=nf((h0-a.hoogte)*1000,1);if(prev!=null)dz=nf((prev-a.hoogte)*1000,1);prev=a.hoogte;}
+      const cls=!u?"oud":(rf!=null&&t!=null&&t>=rf-0.006?"rec":"");
+      return '<tr'+(cls?' class="'+cls+'"':'')+'><td>'+fmtDate(iso)+'</td><td class="n">'+(a.hoogte==null?"–":nf(a.hoogte,4))+
+        '</td><td class="n">'+dz+'</td><td class="n">'+tot+'</td><td>'+esc(a.project_id||"–")+'</td><td>'+esc(a.project_titel||"–")+
+        '</td><td class="n">'+(a.orde==null?"–":esc(a.orde))+'</td><td>'+(u?"yes":"no")+'</td></tr>';}).join("");
+    mBody.innerHTML=napSummary(r)+
+      '<div class="mt-wrap"><table class="mt"><thead><tr><th>Date</th><th class="n">Height relative to NAP (m)</th><th class="n">Subsidence since previous (mm)</th><th class="n">Total subsidence (mm)</th><th>Project</th><th>Project title</th><th class="n">Order</th><th>Used</th></tr></thead><tbody>'+
+      (rows||'<tr><td colspan="8">No measurements found.</td></tr>')+'</tbody></table></div>'+
+      '<p class="mnote">'+items.length+' measurements'+(items.length!==nUsed?', of which '+nUsed+' used in the calculation':'')+'. Highlighted in yellow: the period over which the recent rate was calculated.'+
+      (herz&&items.length!==nUsed?' Grey: old values from before the revision of the NAP system. Rijkswaterstaat later recalculated those measurements; the map only uses the recalculated values (project with &ldquo;=&rdquo;), otherwise apparent jumps of centimetres would appear.':'')+
+      ' Subsidence is positive when the point has moved down. Measurements within one year count as one measuring campaign in the calculation.</p>'+SRCQ.rws+
+      napRawSection(link,null);
+    const pre=document.getElementById("rawjson");if(pre)pre.textContent=JSON.stringify(data,null,2);
+  })
+  .catch(err=>{
+    if(modal.hidden)return;
+    const s=NAP.ser?NAP.ser[i]:null,rows=[];
+    for(let k=0;s&&k<s.length;k+=2){const t=s[k]+1900,y=Math.floor(t),d=new Date(Date.UTC(y,0,1)+(t-y)*365.25*864e5);
+      rows.push('<tr><td>± '+d.toLocaleDateString("en-GB",{month:"short",year:"numeric",timeZone:"UTC"})+'</td><td class="n">'+nf(s[k+1],1)+'</td></tr>');}
+    mBody.innerHTML='<div class="warn">The current data could not be fetched from Rijkswaterstaat. Below is the measurement series as it was stored when this map was made (per measuring campaign, dates approximate).</div>'+
+      napSummary(r)+
+      '<div class="mt-wrap"><table class="mt"><thead><tr><th>Date</th><th class="n">Total subsidence (mm)</th></tr></thead><tbody>'+(rows.join("")||'<tr><td colspan="2">No measurement series stored.</td></tr>')+'</tbody></table></div>'+
+      napRawSection(link,String(err&&err.message||err));
+  });
+}
+function napFind(q){
+  const go=()=>{const k=NAP.rows.findIndex(r=>String(r[NI.p]).toUpperCase()===q.toUpperCase());
+    if(k<0){say("Benchmark “"+q+"” not found.");return;}
+    map.setView([NAP.rows[k][NI.lat],NAP.rows[k][NI.lon]],17);setTimeout(()=>{napRefresh(true);napOpen(k);},300);};
+  if(!S.showNap){S.showNap=true;save();}
+  if(NAP.rows)go();else{napRefresh(true);const t=setInterval(()=>{if(NAP.rows){clearInterval(t);go();}else if(NAP.state==="fout")clearInterval(t);},150);}
+}
+
+// ---------- EGMS: bodembeweging gemeten door satellieten (Copernicus) ----------
+// Uit: niets geladen. Aan: uitgezoomd vakken van ~5 en ~1 km (mediaan), ingezoomd (zoom 14+) de vakken van 100 m.
+const EG={ov:null,state:"",tegels:new Map(),wacht:new Map(),layer:L.layerGroup(),rend:null,DETAIL:14};
+if(map.createPane){map.createPane("egms");const ep=map.getPane&&map.getPane("egms");if(ep){ep.style.zIndex=330;}}
+EG.rend=L.canvas({pane:"egms",padding:0.3});
+const egRow=document.getElementById("egrow"),egCb=document.getElementById("cEgms"),egNoteEl=document.getElementById("egnote");
+if(M.egmsUrl){egRow.hidden=false;egCb.checked=!!S.showEgms;
+  egCb.addEventListener("change",()=>{S.showEgms=egCb.checked;save();egRefresh(true);});}
+function egNote(t){egNoteEl.textContent=t||"";}
+function egCls(v,onz){if(onz)return"oud";return snelKl(v/10);}
+function egTekst(v){const z=v/10;return Math.abs(z)<0.05?"no measurable movement":z>0?"sinks "+nf(z,1)+" mm/year":"rises "+nf(-z,1)+" mm/year";}
+function egLaad(){
+  if(EG.state==="laden"||EG.state==="ok")return Promise.resolve();
+  EG.state="laden";egNote("Loading satellite data …");
+  return fetch(M.egmsUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(d=>{EG.ov=d;EG.set=new Set(d.tegels||[]);EG.state="ok";egNote("");egRefresh(true);})
+    .catch(()=>{EG.state="fout";egNote("The satellite data could not be loaded.");});
+}
+function egTegel(k){
+  if(EG.tegels.has(k))return Promise.resolve(EG.tegels.get(k));
+  if(EG.wacht.has(k))return EG.wacht.get(k);
+  const pr=fetch("egms/"+k+".json").then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(a=>{EG.tegels.set(k,a);EG.wacht.delete(k);return a;}).catch(()=>{EG.wacht.delete(k);return [];});
+  EG.wacht.set(k,pr);return pr;
+}
+function egSleutels(bb){
+  const d=EG.ov.tegel,out=[];
+  for(let x=Math.floor(bb.getWest()/d);x<=Math.floor(bb.getEast()/d);x++)
+    for(let y=Math.floor(bb.getSouth()/d);y<=Math.floor(bb.getNorth()/d);y++){const k=x+"_"+y;if(EG.set.has(k))out.push(k);}
+  return out;
+}
+function egVak(lat,lon,hy,hx,v,onz,info){
+  const c=egCls(v,onz);
+  const r=L.rectangle([[lat-hy,lon-hx],[lat+hy,lon+hx]],{renderer:EG.rend,stroke:false,fillColor:COL[c],fillOpacity:c==="oud"?.35:.5});
+  r.on("click",e=>{L.DomEvent.stopPropagation(e);egOpen(lat,lon,v,onz,info);});
+  return r;
+}
+function egOpen(lat,lon,v,onz,info){
+  const html='<div class="pop"><div class="ttl">Subsidence measured from space</div>'+
+    '<div class="sub">'+(info?"Median of "+info+" blocks of 100 m":"Block of 100 × 100 metres")+' · measured '+esc(String(M.egmsRelease||"").replace("-","–"))+'</div>'+
+    '<p style="margin:6px 0 0;font-size:14px"><b>'+(onz?"Uncertain measurement":egTekst(v))+'</b></p>'+
+    '<p class="mnote">Satellites use radar to measure the height of ground, streets and buildings together; for each block that is an average. '+
+    'A house on piles can stand still while the street in front of it sinks, and vice versa. Settlement bolts and benchmarks do measure one point on one building.</p>'+
+    '<div class="sub" style="margin-top:4px">Source: Copernicus, the EU\'s Earth observation programme ('+esc(M.egmsBron||"EGMS")+')</div>'+
+    (info?'':'<a class="raw" href="#" data-rond>Everything within '+ROND_M+' m</a>')+
+    '<p class="disc">Public measurement data, without judgement or advice. <a href="#over">More</a></p></div>';
+  const pp=L.popup({maxWidth:320,autoPanPadding:[20,20]}).setLatLng([lat,lon]).setContent(html).openOn(map);
+  if(!info)rondLink(pp.getElement&&pp.getElement(),lat,lon,"this block");
+}
+function egRefresh(restyle){
+  if(!M.egmsUrl)return;
+  egCb.checked=!!S.showEgms;
+  if(!S.showEgms){if(map.hasLayer(EG.layer))map.removeLayer(EG.layer);EG.layer.clearLayers();egNote("");return;}
+  if(!map.hasLayer(EG.layer))EG.layer.addTo(map);
+  if(!EG.ov){egLaad();return;}
+  const z=map.getZoom(),bb=map.getBounds().pad(0.2);
+  const tekenRaster=(arr,d,txt)=>{
+    EG.layer.clearLayers();
+    for(let i=0;i<arr.length;i+=4){const la=arr[i],lo=arr[i+1];
+      if(la<bb.getSouth()-d[1]||la>bb.getNorth()+d[1]||lo<bb.getWest()-d[0]||lo>bb.getEast()+d[0])continue;
+      EG.layer.addLayer(egVak(la,lo,d[1]/2,d[0]/2,arr[i+2],0,arr[i+3]));}
+    egNote(txt);
+  };
+  if(z<11){tekenRaster(EG.ov.r5,EG.ov.d5,"Zoomed out: the median per block of about 5 km. Zoom in for more detail.");return;}
+  const sl=egSleutels(bb);
+  if(z<EG.DETAIL||sl.length>16){tekenRaster(EG.ov.r1,EG.ov.d1,"The median per block of about 1 km. Zoom in further for blocks of 100 m.");return;}
+  const zoomNu=z;
+  Promise.all(sl.map(egTegel)).then(lijsten=>{
+    if(map.getZoom()!==zoomNu||!S.showEgms)return;
+    const b2=map.getBounds().pad(0.2);EG.layer.clearLayers();
+    const hy=0.00045,hx=0.00045/Math.cos(map.getCenter().lat*Math.PI/180);
+    for(const a of lijsten)for(let i=0;i<a.length;i+=4){
+      if(!b2.contains([a[i],a[i+1]]))continue;
+      EG.layer.addLayer(egVak(a[i],a[i+1],hy,hx,a[i+2],a[i+3],0));}
+    egNote("Blocks of 100 m. No colour means nothing was measured there (such as meadows and water). Click a block for the rate.");
+  });
+}
+map.on("moveend",()=>egRefresh(false));
+// Leaflet geeft klikken alleen aan de bovenste tekenlaag. Een klik die daar niets raakt, komt als
+// kaartklik binnen; zoek dan zelf het vakje eronder (eerst NAP-vakjes, dan satellietvakken).
+map.on("click",e=>{
+  for(const lg of [GRID.layer,EG.layer]){
+    if(!map.hasLayer(lg))continue;
+    const hit=lg.getLayers().find(r=>r.getBounds&&r.getBounds().contains(e.latlng));
+    if(hit){hit.fire("click",{latlng:e.latlng});return;}
+  }
+});
+// satellietmetingen binnen een straal (laadt de benodigde tegels)
+function egRond(lat,lon,r){
+  if(!M.egmsUrl)return Promise.resolve(null);
+  const d=M.egmsTegel||0.1,dy=r/111320,dx=r/(111320*Math.cos(lat*Math.PI/180)),sl=[];
+  for(let x=Math.floor((lon-dx)/d);x<=Math.floor((lon+dx)/d);x++)for(let y=Math.floor((lat-dy)/d);y<=Math.floor((lat+dy)/d);y++)
+    if(!EG.set||EG.set.has(x+"_"+y))sl.push(x+"_"+y);
+  {
+    return Promise.all(sl.map(egTegel)).then(lijsten=>{
+      const kx=111320*Math.cos(lat*Math.PI/180),o={n:0,v:[],k:{zgroot:0,groot:0,matig:0,klein:0,nihil:0,stab:0,oud:0}};
+      for(const a of lijsten)for(let i=0;i<a.length;i+=4){
+        const ddx=(a[i+1]-lon)*kx,ddy=(a[i]-lat)*111320;if(ddx*ddx+ddy*ddy>r*r)continue;
+        const c=egCls(a[i+2],a[i+3]);o.n++;o.k[c]++;if(c!=="oud")o.v.push(a[i+2]/10);}
+      return o;
+    });
+  }
+}
+function egZin(m){return Math.abs(m)<0.05?"the ground typically shows no measurable movement":m>0?"the ground typically sinks "+nf(m,1)+" mm per year":"the ground typically rises "+nf(-m,1)+" mm per year";}
+// In een pop-up: hoe beweegt de bodem eromheen volgens de satellieten?
+function egPopup(el,lat,lon){
+  if(!M.egmsUrl||!el)return;
+  egRond(lat,lon,ROND_M).then(o=>{
+    if(!o||!o.v.length||!el.isConnected)return;
+    const t="Satellite (within "+ROND_M+" m): "+egZin(median(o.v))+" ("+o.v.length+" blocks of 100 m).";
+    const d=el.querySelector(".omg");
+    if(d)d.insertAdjacentHTML("beforeend",'<br>'+esc(t));
+    else{const a=el.querySelector("a.raw");if(a)a.insertAdjacentHTML("beforebegin",'<div class="omg">'+esc(t)+'</div>');}
+  });
+}
+
+// ---------- pand op een plek: bouwjaar en aantal adressen (BAG via PDOK, publiek domein) ----------
+const BAG_API="https://api.pdok.nl/kadaster/bag/ogc/v2/collections/pand/items";
+const BAG={cache:new Map(),vorm:null};
+function bagRingen(g){if(!g)return[];if(g.type==="Polygon")return[g.coordinates[0]];if(g.type==="MultiPolygon")return g.coordinates.map(p=>p[0]);return[];}
+function bagAfstand(lat,lon,ringen){
+  // 0 als het punt in het pand ligt, anders de afstand in meters tot de rand
+  const kx=111320*Math.cos(lat*Math.PI/180),ky=111320;let best=Infinity;
+  for(const r of ringen){let binnen=false;
+    for(let i=0,j=r.length-1;i<r.length;j=i++){
+      const xi=(r[i][0]-lon)*kx,yi=(r[i][1]-lat)*ky,xj=(r[j][0]-lon)*kx,yj=(r[j][1]-lat)*ky;
+      if((yi>0)!==(yj>0)&&0<(xj-xi)*(0-yi)/((yj-yi)||1e-12)+xi)binnen=!binnen;
+      const dx=xj-xi,dy=yj-yi,l2=dx*dx+dy*dy;let t=l2?-(xi*dx+yi*dy)/l2:0;t=Math.max(0,Math.min(1,t));
+      const d=Math.hypot(xi+t*dx,yi+t*dy);if(d<best)best=d;}
+    if(binnen)return 0;}
+  return best;
+}
+function bagPand(lat,lon,maxM){
+  const k=lat.toFixed(5)+","+lon.toFixed(5)+","+maxM;
+  if(BAG.cache.has(k))return BAG.cache.get(k);
+  const r=Math.max(maxM,2)+3,dy=r/111320,dx=r/(111320*Math.cos(lat*Math.PI/180));
+  const u=BAG_API+"?f=json&limit=30&bbox="+[lon-dx,lat-dy,lon+dx,lat+dy].map(v=>v.toFixed(6)).join(",");
+  const pr=fetch(u).then(x=>{if(!x.ok)throw new Error("HTTP "+x.status);return x.json();}).then(j=>{
+    let best=null,bd=Infinity;
+    for(const f of (j&&j.features)||[]){const pp=f.properties||{},st=String(pp.status||"");
+      if(/gesloopt|niet gerealiseerd/i.test(st))continue;
+      const d=bagAfstand(lat,lon,bagRingen(f.geometry));if(d<bd){bd=d;best=f;}}
+    if(!best||bd>maxM)return null;
+    const pp=best.properties||{};
+    return{bouwjaar:pp.bouwjaar,adressen:pp.aantal_verblijfsobjecten,status:String(pp.status||""),geom:best.geometry};
+  }).catch(()=>null);
+  BAG.cache.set(k,pr);pr.then(v=>{if(v===null)setTimeout(()=>BAG.cache.delete(k),60000);});
+  return pr;
+}
+function bagTekst(p){
+  const d=[];const j=+p.bouwjaar;
+  d.push(j>=1200&&j<=new Date().getFullYear()+5?"built in "+j:"year of construction unknown");
+  const n=+p.adressen;if(n>0)d.push(n+(n>1?" addresses":" address"));
+  if(p.status&&!/^pand in gebruik/i.test(p.status))d.push(p.status.toLowerCase());
+  return '<p class="pand"><b>Building:</b> '+esc(d.join(" · "))+' <span class="m">(BAG)</span></p>';
+}
+function bagVorm(geom){
+  bagVormWeg();if(!geom)return;
+  BAG.vorm=L.geoJSON(geom,{pane:"rond",renderer:ROND.rend,interactive:false,style:{color:"#24507a",weight:2,fill:true,fillOpacity:.08,dashArray:null}}).addTo(map);
+}
+function bagVormWeg(){if(BAG.vorm){map.removeLayer(BAG.vorm);BAG.vorm=null;}}
+map.on("popupclose",()=>{if(!ROND.pandVorm)bagVormWeg();});
+// In een pop-up: bouwjaar en aantal adressen van het pand waar het meetpunt in zit
+function bagPopup(el,lat,lon,maxM){
+  if(!el)return;
+  bagPand(lat,lon,maxM).then(p=>{
+    if(!p||!el.isConnected||el.querySelector(".pand"))return;
+    const t=el.querySelector("table.kv");if(t)t.insertAdjacentHTML("afterend",bagTekst(p));
+    ROND.pandVorm=false;bagVorm(p.geom);
+  });
+}
+
+buildRows();fillSettings();styleAll();
+
+// ---------- link naar een plek of meetpunt: ?kaart=lat,lon,zoom of ?punt=nummer ----------
+(function(){
+  let p;try{p=new URLSearchParams(location.search);}catch(e){return;}
+  const k=p.get("kaart"),pt=(p.get("punt")||"").trim(),van=(p.get("van")||"").trim();
+  if(GB&&/^gemeente\/[a-z0-9-]+\/(((wijk|straat)\/)?[a-z0-9-]+\/)?$/.test(van)){
+    const d=van.split("/");const gi=GB.g.findIndex(g=>g[0]===d[1]);let x=null;
+    if(gi>=0&&!d[2])x=gebGem(gi);
+    else if(gi>=0&&gi===GB.a&&d[2]==="wijk"&&GB.w)x=gebWijk(GB.w.findIndex(w=>w[0]===d[3]));
+    else if(gi>=0&&gi===GB.a&&d[2]==="straat"&&GB.s){const y=gebStraat(GB.s.findIndex(w=>w[0]===d[3]));x=y?{u:y.u,n:y.n}:null;}
+    else if(gi>=0&&gi===GB.a&&GB.b){const bi=GB.b.findIndex(b=>b&&b[0]===d[2]);x=gebBuurt(bi);}
+    if(x){const t=document.getElementById("terug");
+      t.innerHTML='<a href="'+esc(x.u)+'">← Back to '+esc(x.n)+'</a><button type="button" aria-label="Hide">×</button>';
+      t.hidden=false;document.body.classList.add("terug");
+      t.querySelector("button").addEventListener("click",()=>{t.hidden=true;document.body.classList.remove("terug");});
+      L.DomEvent.disableClickPropagation(t);}
+  }
+  if(k){const a=k.split(",").map(Number);
+    if(a.length>=2&&a[0]>50&&a[0]<54&&a[1]>3&&a[1]<8)map.setView([a[0],a[1]],Math.max(7,Math.min(18,Math.round(a[2])||14)));}
+  if(!pt)return;
+  if(/^\d{3}[a-z]\d{4}$/i.test(pt)){if(M.napUrl)napFind(pt);return;}
+  const i=B.findIndex(b=>String(b[I.id])===pt);
+  if(i<0){say("Measuring point “"+pt+"” not found.");return;}
+  map.setView([B[i][I.lat],B[i][I.lon]],18);setTimeout(()=>openBout(i),0);
+})();
+
+// ---------- meetreeksen (website: apart bestand, na de kaart geladen) ----------
+if(M.seriesUrl){
+  serState="laden";
+  fetch(M.seriesUrl).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .then(arr=>{
+    if(!Array.isArray(arr)||arr.length!==B.length)throw new Error("unexpected format");
+    for(let i=0;i<B.length;i++)B[i][I.ser]=arr[i];
+    serState="ok";
+    if(curPop&&map.hasLayer(curPop.p))openBout(curPop.i);
+  })
+  .catch(()=>{serState="fout";if(curPop&&map.hasLayer(curPop.p))openBout(curPop.i);});
+}
+}catch(err){window.__showErr(String(err&&err.stack||err));}
+}
+</script>
+<script>(function(){
+var el=document.getElementById("loading");el.hidden=false;
+fetch("data.json?v=0935ef167a").then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+.then(function(D){el.hidden=true;zkStart(D);})
+.catch(function(e){el.className="err";el.textContent="The map data could not be loaded ("+(e&&e.message||e)+"). Refresh the page or try again later.";el.hidden=false;});
+})();</script>
+</body>
+</html>
